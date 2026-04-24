@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+data/
+config/config.yaml
+backend/data/
+backend/public/
+frontend/dist/
+frontend/tsconfig.app.tsbuildinfo
+*.log
+.DS_Store
+wrapper/wrapper
+docker-compose.override.yml

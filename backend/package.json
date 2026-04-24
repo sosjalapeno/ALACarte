@@ -1,0 +1,16 @@
+{
+  "name": "alacarte-web",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Apple Music downloader web backend",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "dependencies": {
+    "dockerode": "^4.0.5",
+    "express": "^4.21.2"
+  }
+}

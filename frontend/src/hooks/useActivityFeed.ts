@@ -1,0 +1,424 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+
+import { api, type Job } from '../api/client'
+import { stripYear } from '../lib/format'
+import {
+  useEventStream,
+  type EventStreamStatus,
+} from './useEventStream'
+
+export type ActivitySeverity = 'info' | 'success' | 'warning' | 'error'
+export type ActivitySource = 'job' | 'wrapper' | 'system'
+
+export type ActivityFeedItem = {
+  id: string
+  ts: number
+  source: ActivitySource
+  severity: ActivitySeverity
+  title: string
+  detail?: string
+  jobId?: string
+  jobStatus?: Job['status']
+  progress?: number
+}
+
+export type ActivityTerminalLine = {
+  id: string
+  ts: number
+  source: ActivitySource
+  severity: ActivitySeverity
+  text: string
+  channel: 'event' | 'stdout' | 'stderr'
+  jobId?: string
+}
+
+type WrapperEvent = {
+  phase?: string
+  error?: string | null
+}
+
+type JobLogEvent = {
+  id?: string
+  line?: string
+  which?: 'stdout' | 'stderr'
+}
+
+type WrapperLogEvent = {
+  line?: string
+}
+
+const MAX_FEED_ITEMS = 120
+const MAX_TERMINAL_LINES = 600
+
+export function useActivityFeed() {
+  const [jobs, setJobs] = useState<Record<string, Job>>({})
+  const [feedItems, setFeedItems] = useState<ActivityFeedItem[]>([])
+  const [terminalLines, setTerminalLines] = useState<ActivityTerminalLine[]>([])
+  const [loading, setLoading] = useState(true)
+  const [streamStatus, setStreamStatus] = useState<EventStreamStatus>('connecting')
+  const sequenceRef = useRef(0)
+  const jobFeedSignatureRef = useRef(new Map<string, string>())
+  const wrapperPhaseRef = useRef('')
+
+  const nextId = () => {
+    sequenceRef.current += 1
+    return `${Date.now()}-${sequenceRef.current}`
+  }
+
+  const upsertJobFeedItem = (item: ActivityFeedItem) => {
+    if (!item.jobId || !item.jobStatus) {
+      appendFeedItem(item)
+      return
+    }
+
+    setFeedItems((prev) => {
+      const index = prev.findIndex((candidate) => candidate.jobId === item.jobId)
+      if (index === -1) {
+        const inserted = [item, ...prev]
+        return inserted.length <= MAX_FEED_ITEMS
+          ? inserted
+          : inserted.slice(0, MAX_FEED_ITEMS)
+      }
+
+      const next = [...prev]
+      next[index] = {
+        ...next[index],
+        ...item,
+        id: next[index].id,
+      }
+
+      if (index > 0) {
+        const [updated] = next.splice(index, 1)
+        next.unshift(updated)
+      }
+
+      return next.length <= MAX_FEED_ITEMS ? next : next.slice(0, MAX_FEED_ITEMS)
+    })
+  }
+
+  const appendFeedItem = (item: ActivityFeedItem) => {
+    setFeedItems((prev) => {
+      const next = [item, ...prev]
+      return next.length <= MAX_FEED_ITEMS ? next : next.slice(0, MAX_FEED_ITEMS)
+    })
+  }
+
+  const appendTerminalLine = (line: ActivityTerminalLine) => {
+    setTerminalLines((prev) => {
+      const next = [...prev, line]
+      return next.length <= MAX_TERMINAL_LINES
+        ? next
+        : next.slice(next.length - MAX_TERMINAL_LINES)
+    })
+  }
+
+  useEffect(() => {
+    let cancelled = false
+
+    api
+      .queue()
+      .then((response) => {
+        if (cancelled) return
+        const map: Record<string, Job> = {}
+        for (const job of response.jobs) {
+          map[job.id] = job
+          jobFeedSignatureRef.current.set(job.id, buildJobSignature(job))
+        }
+        setJobs((prev) => ({ ...map, ...prev }))
+
+        const seededJobs = [...response.jobs]
+          .sort((a, b) => (a.updatedAt || a.createdAt || 0) - (b.updatedAt || b.createdAt || 0))
+          .slice(-12)
+
+        const seededFeed = [...seededJobs]
+          .reverse()
+          .map((job) =>
+            makeJobFeedItem(job, job.updatedAt || job.createdAt || Date.now(), `seed-feed-${job.id}`),
+          )
+        const seededTerminal = seededJobs.map((job) =>
+          makeJobEventLine(job, job.updatedAt || job.createdAt || Date.now(), `seed-log-${job.id}`),
+        )
+
+        setFeedItems((prev) => (prev.length > 0 ? prev : seededFeed))
+        setTerminalLines((prev) => (prev.length > 0 ? prev : seededTerminal))
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEventStream(
+    (type, data) => {
+      const now = Date.now()
+
+      if (type === 'job.created' || type === 'job.update') {
+        const job = data as Job
+        setJobs((prev) => ({
+          ...prev,
+          [job.id]: { ...prev[job.id], ...job },
+        }))
+
+        const signature = buildJobSignature(job)
+        const previousSignature = jobFeedSignatureRef.current.get(job.id)
+        const shouldRecord = type === 'job.created' || previousSignature !== signature
+        jobFeedSignatureRef.current.set(job.id, signature)
+
+        if (shouldRecord) {
+          upsertJobFeedItem(makeJobFeedItem(job, job.updatedAt || now, `feed-${nextId()}`))
+          appendTerminalLine(makeJobEventLine(job, job.updatedAt || now, `event-${nextId()}`))
+        }
+        return
+      }
+
+      if (type === 'job.log') {
+        const event = data as JobLogEvent
+        const line = String(event?.line || '').trim()
+        if (!line) return
+        appendTerminalLine({
+          id: `job-log-${nextId()}`,
+          ts: now,
+          source: 'job',
+          severity: inferLogSeverity(line, event.which),
+          text: line,
+          channel: event.which || 'stdout',
+          jobId: event.id,
+        })
+        return
+      }
+
+      if (type === 'wrapper.login') {
+        const event = data as WrapperEvent
+        const phase = String(event?.phase || '').trim()
+        if (!phase) return
+        if (wrapperPhaseRef.current === phase && !event.error) return
+        wrapperPhaseRef.current = phase
+        appendFeedItem(makeWrapperFeedItem(event, now, `wrapper-feed-${nextId()}`))
+        appendTerminalLine(makeWrapperEventLine(event, now, `wrapper-event-${nextId()}`))
+        return
+      }
+
+      if (type === 'wrapper.login.log') {
+        const event = data as WrapperLogEvent
+        const line = String(event?.line || '').trim()
+        if (!line) return
+        appendTerminalLine({
+          id: `wrapper-log-${nextId()}`,
+          ts: now,
+          source: 'wrapper',
+          severity: inferLogSeverity(line),
+          text: line,
+          channel: 'stdout',
+        })
+      }
+    },
+    {
+      onStatusChange: (status) => setStreamStatus(status),
+    },
+  )
+
+  const jobsList = useMemo(
+    () =>
+      Object.values(jobs).sort(
+        (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0),
+      ),
+    [jobs],
+  )
+
+  const activeJobs = useMemo(
+    () => jobsList.filter((job) => job.status === 'queued' || job.status === 'running'),
+    [jobsList],
+  )
+
+  const recentFailures = useMemo(
+    () => jobsList.filter((job) => job.status === 'failed').slice(0, 8),
+    [jobsList],
+  )
+
+  const latestEventAt = feedItems[0]?.ts || terminalLines[terminalLines.length - 1]?.ts || null
+
+  return {
+    loading,
+    streamStatus,
+    feedItems,
+    terminalLines,
+    jobs: jobsList,
+    activeJobs,
+    recentFailures,
+    latestEventAt,
+  }
+}
+
+function buildJobSignature(job: Job) {
+  return [
+    job.status,
+    job.message || '',
+    job.error || '',
+    job.currentTrack || '',
+    Math.round(Number(job.progress || 0)),
+  ].join('::')
+}
+
+function makeJobFeedItem(job: Job, ts: number, id: string): ActivityFeedItem {
+  const label = jobLabel(job)
+  if (job.status === 'done') {
+    return {
+      id,
+      ts,
+      source: 'job',
+      severity: 'success',
+      title: job.kind === 'song' ? 'Track imported' : 'Album imported',
+      detail: `${label}${job.message ? ` · ${job.message}` : ''}`,
+      jobId: job.id,
+      jobStatus: job.status,
+      progress: job.progress,
+    }
+  }
+
+  if (job.status === 'failed') {
+    return {
+      id,
+      ts,
+      source: 'job',
+      severity: 'error',
+      title: 'Import failed',
+      detail: `${label}${job.error ? ` · ${job.error}` : job.message ? ` · ${job.message}` : ''}`,
+      jobId: job.id,
+      jobStatus: job.status,
+      progress: job.progress,
+    }
+  }
+
+  if (job.status === 'running') {
+    return {
+      id,
+      ts,
+      source: 'job',
+      severity: 'info',
+      title: job.message || 'Download in progress',
+      detail: `${label}${job.currentTrack ? ` · ${job.currentTrack}` : ''}`,
+      jobId: job.id,
+      jobStatus: job.status,
+      progress: job.progress,
+    }
+  }
+
+  return {
+    id,
+    ts,
+    source: 'job',
+    severity: 'warning',
+    title: job.kind === 'song' ? 'Queued track import' : 'Queued album import',
+    detail: label,
+    jobId: job.id,
+    jobStatus: job.status,
+    progress: job.progress,
+  }
+}
+
+function makeJobEventLine(job: Job, ts: number, id: string): ActivityTerminalLine {
+  const label = jobLabel(job)
+  const text =
+    job.status === 'done'
+      ? `[job] imported ${label}${job.message ? ` · ${job.message}` : ''}`
+      : job.status === 'failed'
+      ? `[job] failed ${label}${job.error ? ` · ${job.error}` : job.message ? ` · ${job.message}` : ''}`
+      : job.status === 'running'
+      ? `[job] running ${label}${job.message ? ` · ${job.message}` : ''}`
+      : `[job] queued ${label}`
+
+  return {
+    id,
+    ts,
+    source: 'job',
+    severity:
+      job.status === 'done'
+        ? 'success'
+        : job.status === 'failed'
+        ? 'error'
+        : job.status === 'queued'
+        ? 'warning'
+        : 'info',
+    text,
+    channel: 'event',
+    jobId: job.id,
+  }
+}
+
+function makeWrapperFeedItem(event: WrapperEvent, ts: number, id: string): ActivityFeedItem {
+  const phase = String(event.phase || '').trim()
+  return {
+    id,
+    ts,
+    source: 'wrapper',
+    severity: wrapperSeverity(phase, event.error),
+    title: wrapperTitle(phase),
+    detail: event.error || wrapperDetail(phase),
+  }
+}
+
+function makeWrapperEventLine(event: WrapperEvent, ts: number, id: string): ActivityTerminalLine {
+  const phase = String(event.phase || '').trim()
+  return {
+    id,
+    ts,
+    source: 'wrapper',
+    severity: wrapperSeverity(phase, event.error),
+    text: `[wrapper] ${wrapperTitle(phase)}${event.error ? ` · ${event.error}` : ''}`,
+    channel: 'event',
+  }
+}
+
+function wrapperSeverity(phase: string, error?: string | null): ActivitySeverity {
+  if (error || phase === 'failed') return 'error'
+  if (phase === 'ready') return 'success'
+  if (phase === '2fa-required') return 'warning'
+  return 'info'
+}
+
+function wrapperTitle(phase: string) {
+  if (phase === 'preparing') return 'Preparing sign-in'
+  if (phase === 'creating') return 'Creating wrapper session'
+  if (phase === 'signing-in') return 'Signing in to Apple Music'
+  if (phase === '2fa-required') return 'Waiting for 2FA code'
+  if (phase === 'verifying-2fa') return 'Verifying 2FA code'
+  if (phase === 'starting-main') return 'Starting wrapper services'
+  if (phase === 'ready') return 'Wrapper ready'
+  if (phase === 'failed') return 'Wrapper sign-in failed'
+  return 'Wrapper event'
+}
+
+function wrapperDetail(phase: string) {
+  if (phase === '2fa-required') {
+    return 'Check your trusted Apple device and enter the code in Settings.'
+  }
+  if (phase === 'ready') {
+    return 'Apple Music backend services are authenticated and ready.'
+  }
+  return undefined
+}
+
+function inferLogSeverity(line: string, channel?: string): ActivitySeverity {
+  const lower = line.toLowerCase()
+  if (
+    channel === 'stderr' ||
+    /error|failed|forbidden|timed out|disabled|locked|panic|fatal/.test(lower)
+  ) {
+    return 'error'
+  }
+  if (/success|ready|imported|done|cached successfully/.test(lower)) {
+    return 'success'
+  }
+  if (/queued|waiting|preparing|starting|verifying|moving|converting/.test(lower)) {
+    return 'warning'
+  }
+  return 'info'
+}
+
+function jobLabel(job: Job) {
+  return `${job.artist} — ${stripYear(job.albumTitle)}`
+}

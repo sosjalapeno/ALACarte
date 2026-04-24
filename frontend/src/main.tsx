@@ -1,0 +1,18 @@
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+
+import './styles/global.css'
+
+import App from './App'
+import { LibraryPresenceProvider } from './hooks/useLibraryPresence'
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <LibraryPresenceProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </LibraryPresenceProvider>
+  </React.StrictMode>,
+)

@@ -1,0 +1,59 @@
+services:
+  wrapper:
+    build:
+      context: ./wrapper
+      dockerfile: Dockerfile
+    image: alacarte-wrapper:local
+    container_name: alacarte-wrapper
+    volumes:
+      - ./data/wrapper:/app/rootfs/data
+    # Bypass the image's `bash -c "/app/wrapper $args"` entrypoint and hand
+    # argv straight to the binary — avoids all shell-quoting pitfalls.
+    entrypoint: ["/app/wrapper"]
+    command: ["-H", "0.0.0.0"]
+    expose:
+      - "10020"
+      - "20020"
+      - "30020"
+    networks:
+      - alacarte-net
+    # on-failure (not unless-stopped) so clean exit due to missing creds doesn't
+    # loop forever — the web container surfaces an "enter Apple creds" banner.
+    restart: on-failure
+
+  web:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: alacarte-web
+    depends_on:
+      - wrapper
+    environment:
+      - PORT=7373
+      - AMDL_WRAPPER_HOST=alacarte-wrapper
+      - AMDL_WRAPPER_DECRYPT_PORT=10020
+      - AMDL_WRAPPER_M3U8_PORT=20020
+      - AMDL_WRAPPER_ACCOUNT_PORT=30020
+      - AMDL_MUSIC_PATH=/music
+      - AMDL_CONFIG_DIR=/config
+      - AMDL_SECRET_KEY=${AMDL_SECRET_KEY:-}
+    volumes:
+      - ./data/web:/config
+      - ${MUSIC_PATH:?Set MUSIC_PATH in .env}:/music
+      # Shared with the wrapper container so the web UI can drop a 2fa.txt file
+      # when the Apple ID requires a 2FA code (wrapper polls this path).
+      - ./data/wrapper:/wrapper-data
+      # Required so the web UI can run first-time Apple ID login for the
+      # wrapper container automatically. Treat this as root-on-host access;
+      # only expose the web UI on trusted networks.
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${WEB_PORT:-7373}:7373"
+    networks:
+      - alacarte-net
+    restart: unless-stopped
+
+networks:
+  alacarte-net:
+    name: ${DOCKER_NETWORK:-alacarte-net}
+    external: ${DOCKER_NETWORK_EXTERNAL:-false}
