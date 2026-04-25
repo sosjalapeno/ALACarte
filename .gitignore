@@ -9,5 +9,4 @@ frontend/dist/
 frontend/tsconfig.app.tsbuildinfo
 *.log
 .DS_Store
-wrapper/wrapper
 docker-compose.override.yml
