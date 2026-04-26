@@ -98,6 +98,8 @@ export type PublicSettings = {
   keepAlac: boolean
   coverSize: string
   downloadLyrics: boolean
+  lyricsFormat: 'lrc' | 'ttml'
+  lyricsType: 'lyrics' | 'lyrics-with-translation'
   explicitFilter: 'explicit' | 'clean' | 'both'
   appleEmailMasked: string | null
   hasAppleCreds: boolean

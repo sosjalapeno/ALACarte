@@ -30,9 +30,13 @@ const WRITABLE_KEYS = new Set([
   'coverSize',
   'downloadLyrics',
   'explicitFilter',
+  'lyricsFormat',
+  'lyricsType',
 ])
 
 const EXPLICIT_FILTER_VALUES = new Set(['explicit', 'clean', 'both'])
+const LYRICS_FORMAT_VALUES = new Set(['lrc', 'ttml'])
+const LYRICS_TYPE_VALUES = new Set(['lyrics', 'lyrics-with-translation'])
 
 settingsRouter.get('/', async (_req, res) => {
   try {
@@ -50,6 +54,8 @@ settingsRouter.put('/', async (req, res) => {
     for (const [k, v] of Object.entries(body)) {
       if (!WRITABLE_KEYS.has(k)) continue
       if (k === 'explicitFilter' && !EXPLICIT_FILTER_VALUES.has(v)) continue
+      if (k === 'lyricsFormat' && !LYRICS_FORMAT_VALUES.has(v)) continue
+      if (k === 'lyricsType' && !LYRICS_TYPE_VALUES.has(v)) continue
       patch[k] = v
     }
     await writeSettings(patch)

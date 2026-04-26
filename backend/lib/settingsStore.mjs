@@ -20,6 +20,8 @@ const DEFAULTS = {
   keepAlac: false,
   coverSize: '1400x1400',
   downloadLyrics: false,
+  lyricsFormat: 'lrc',
+  lyricsType: 'lyrics',
   explicitFilter: 'explicit',
   appleEmail: null,
   applePassword: null,
@@ -117,6 +119,8 @@ export async function readPublicSettings() {
     keepAlac: s.keepAlac,
     coverSize: s.coverSize,
     downloadLyrics: Boolean(s.downloadLyrics),
+    lyricsFormat: s.lyricsFormat || 'lrc',
+    lyricsType: s.lyricsType || 'lyrics',
     explicitFilter: s.explicitFilter || 'explicit',
     appleEmailMasked: s.appleEmail
       ? maskEmail(decryptSecret(s.appleEmail) || '')

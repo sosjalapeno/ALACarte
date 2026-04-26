@@ -58,7 +58,7 @@ export function SettingsPage() {
         setSettings(s)
         setAppSettingsCache(s)
       })
-      .catch(() => {})
+      .catch(() => { })
   useEffect(() => {
     reload()
   }, [])
@@ -178,11 +178,7 @@ export function SettingsPage() {
                       Show both
                     </option>
                   </select>
-                  <div className="mt-1 text-xs text-white/50">
-                    Apple often lists explicit and clean masters as separate
-                    albums. "Prefer" still falls back to the other when only one
-                    version exists.
-                  </div>
+
                 </div>
               </label>
             </div>
@@ -203,15 +199,12 @@ export function SettingsPage() {
                   <div className="text-sm font-medium">
                     Convert ALAC → FLAC after download
                   </div>
-                  <div className="mt-0.5 text-xs text-white/55">
-                    Uses ffmpeg. Same lossless quality.
-                  </div>
+
                 </div>
               </label>
               <label
-                className={`flex items-start gap-3 ${
-                  settings.hasMediaUserToken ? 'cursor-pointer' : 'cursor-not-allowed'
-                }`}
+                className={`flex items-start gap-3 ${settings.hasMediaUserToken ? 'cursor-pointer' : 'cursor-not-allowed'
+                  }`}
               >
                 <input
                   type="checkbox"
@@ -222,16 +215,48 @@ export function SettingsPage() {
                 />
                 <div>
                   <div
-                    className={`text-sm font-medium ${
-                      settings.hasMediaUserToken ? '' : 'text-white/45'
-                    }`}
+                    className={`text-sm font-medium ${settings.hasMediaUserToken ? '' : 'text-white/45'
+                      }`}
                   >
                     Download lyrics
                   </div>
-                  <div className="mt-0.5 text-xs text-white/55">
-                    Saves embedded lyrics and sidecar <code className="text-accent">.lrc</code>{' '}
-                    files for supported players. Requires a media-user-token.
-                  </div>
+
+                </div>
+              </label>
+              <label className="flex flex-col gap-1.5 md:flex-row md:items-start md:gap-3">
+                <span className="text-sm text-white/70 md:w-32 md:pt-2">Lyrics format</span>
+                <div className="md:flex-1">
+                  <select
+                    id="lyrics-format-select"
+                    value={settings.lyricsFormat}
+                    disabled={!settings.downloadLyrics}
+                    onChange={(e) =>
+                      update({ lyricsFormat: e.target.value as PublicSettings['lyricsFormat'] })
+                    }
+                    className="w-full rounded-app border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-white outline-none transition-[border-color,background,box-shadow] duration-[250ms] ease-smooth focus:border-[rgba(var(--accent),0.45)] focus:bg-[rgba(var(--accent),0.04)] focus:shadow-[0_0_0_3px_rgba(var(--accent),0.18)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="lrc" className="bg-zinc-900">LRC — line-synced (recommended)</option>
+                    <option value="ttml" className="bg-zinc-900">TTML — word/syllable sync</option>
+                  </select>
+
+                </div>
+              </label>
+              <label className="flex flex-col gap-1.5 md:flex-row md:items-start md:gap-3">
+                <span className="text-sm text-white/70 md:w-32 md:pt-2">Lyrics type</span>
+                <div className="md:flex-1">
+                  <select
+                    id="lyrics-type-select"
+                    value={settings.lyricsType}
+                    disabled={!settings.downloadLyrics}
+                    onChange={(e) =>
+                      update({ lyricsType: e.target.value as PublicSettings['lyricsType'] })
+                    }
+                    className="w-full rounded-app border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-white outline-none transition-[border-color,background,box-shadow] duration-[250ms] ease-smooth focus:border-[rgba(var(--accent),0.45)] focus:bg-[rgba(var(--accent),0.04)] focus:shadow-[0_0_0_3px_rgba(var(--accent),0.18)] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="lyrics" className="bg-zinc-900">Lyrics only</option>
+                    <option value="lyrics-with-translation" className="bg-zinc-900">Lyrics + translation</option>
+                  </select>
+
                 </div>
               </label>
               <label className="flex flex-col gap-1.5 md:flex-row md:items-start md:gap-3">
@@ -249,9 +274,7 @@ export function SettingsPage() {
                     <option value="3000x3000" className="bg-zinc-900">3000×3000</option>
                     <option value="5000x5000" className="bg-zinc-900">5000×5000 (max, large)</option>
                   </select>
-                  <div className="mt-1 text-xs text-white/50">
-                    Used for both embedded cover and folder.jpg.
-                  </div>
+
                 </div>
               </label>
             </div>
@@ -553,7 +576,7 @@ function AppleCredsForm({
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(failureTail.join('\n'))
-                  } catch {}
+                  } catch { }
                 }}
                 className="inline-flex items-center gap-1.5 text-xs text-white/60 hover:text-white"
               >
@@ -574,9 +597,7 @@ function AppleCredsForm({
             <span className="truncate">{phaseLabel(phase)}</span>
           </Badge>
         )}
-        <p className="text-xs text-white/50">
-          Encrypted at rest. Password never touches a shell or log.
-        </p>
+
       </form>
       {showTwoFa && (
         <TwoFaModal onClose={() => setShowTwoFa(false)} onCancel={cancel} />
@@ -675,13 +696,9 @@ function MediaUserTokenForm({ settings, onChange }: { settings: PublicSettings; 
   return (
     <form className="space-y-3" onSubmit={save}>
       <div className="text-sm text-white/55">
-        Optional. Needed for lyrics — when present, both embedded lyrics and a
-        sidecar <code className="text-accent">.lrc</code> file are saved so
-        compatible media servers and players can pick them up automatically.{' '}
-        <span className="text-white/70">
-          DevTools → Application → Cookies → music.apple.com → copy{' '}
-          <code className="text-accent">media-user-token</code>.
-        </span>
+        Required for lyrics. Grab the raw value from{' '}
+        <a href="https://music.apple.com" target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-2 decoration-accent/50 hover:text-white">music.apple.com</a>
+        {' '}→ DevTools → Application → Cookies.
       </div>
       {settings.hasMediaUserToken && (
         <div className="text-sm text-emerald-400">Currently stored.</div>
@@ -736,7 +753,7 @@ function AccountSection({ onFlash }: { onFlash: (msg: string, err?: boolean) => 
     api
       .authState()
       .then((s) => setUsername(s.username))
-      .catch(() => {})
+      .catch(() => { })
   }, [])
 
   return (
@@ -892,7 +909,7 @@ function ChangeUsernameForm({
           disabled={submitting}
           className={cx(
             (tooShort || tooLong || badChars) &&
-              'border-rose-400/50 focus:border-rose-400/70 focus:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
+            'border-rose-400/50 focus:border-rose-400/70 focus:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
           )}
         />
         <Input
@@ -995,7 +1012,7 @@ function ChangePasswordForm({ onUpdated }: { onUpdated: () => void }) {
           disabled={submitting}
           className={cx(
             tooShort &&
-              'border-rose-400/50 focus:border-rose-400/70 focus:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
+            'border-rose-400/50 focus:border-rose-400/70 focus:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
           )}
         />
         <Input
@@ -1007,7 +1024,7 @@ function ChangePasswordForm({ onUpdated }: { onUpdated: () => void }) {
           disabled={submitting}
           className={cx(
             mismatch &&
-              'border-rose-400/50 focus:border-rose-400/70 focus:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
+            'border-rose-400/50 focus:border-rose-400/70 focus:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
           )}
         />
       </div>
