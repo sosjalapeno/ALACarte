@@ -133,11 +133,46 @@ export type LibraryAlbum = {
   addedAt?: number
 }
 
+type UnauthorizedHandler = (info: { needsSetup: boolean }) => void
+
+let onUnauthorized: UnauthorizedHandler | null = null
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  onUnauthorized = handler
+}
+
+export class HttpError extends Error {
+  status: number
+  needsSetup: boolean
+  retryAfter: number | null
+  lockedUntil: number | null
+  constructor(
+    status: number,
+    message: string,
+    needsSetup = false,
+    retryAfter: number | null = null,
+    lockedUntil: number | null = null,
+  ) {
+    super(message)
+    this.status = status
+    this.needsSetup = needsSetup
+    this.retryAfter = retryAfter
+    this.lockedUntil = lockedUntil
+  }
+}
+
+let setupToken: string | null = null
+
+export function setSetupToken(token: string | null) {
+  setupToken = token && token.trim() ? token.trim() : null
+}
+
 async function http<T>(
   path: string,
   opts: RequestInit = {},
 ): Promise<T> {
   const res = await fetch(path, {
+    credentials: 'include',
     ...opts,
     headers: {
       'Content-Type': 'application/json',
@@ -152,13 +187,79 @@ async function http<T>(
     body = { raw: text }
   }
   if (!res.ok) {
+    if (res.status === 401) {
+      const needsSetup = Boolean(body?.needsSetup)
+      // Don't trip the auth overlay for the auth endpoints themselves —
+      // login/setup pages handle their own errors inline.
+      if (!path.startsWith('/api/auth/') && onUnauthorized) {
+        onUnauthorized({ needsSetup })
+      }
+      throw new HttpError(401, body?.error || 'unauthorized', needsSetup)
+    }
     const msg = body?.error || `HTTP ${res.status}`
-    throw new Error(msg)
+    throw new HttpError(
+      res.status,
+      msg,
+      false,
+      typeof body?.retryAfter === 'number' ? body.retryAfter : null,
+      typeof body?.lockedUntil === 'number' ? body.lockedUntil : null,
+    )
   }
   return body as T
 }
 
+export type AuthState = {
+  authDisabled: boolean
+  passwordSet: boolean
+  authed: boolean
+  username: string | null
+  minPasswordLength: number
+  usernameMinLength: number
+  usernameMaxLength: number
+  requiresSetupToken?: boolean
+}
+
+export type WrapperLoginStatus =
+  | { inProgress: false }
+  | {
+      inProgress: true
+      status: {
+        phase: string
+        error?: string
+        tail?: string[]
+      }
+    }
+
 export const api = {
+  authState: () => http<AuthState>('/api/auth/state'),
+  authSetup: (username: string, password: string) =>
+    http<{ ok: boolean; username: string }>('/api/auth/setup', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+      headers: setupToken ? { 'X-Setup-Token': setupToken } : undefined,
+    }),
+  authLogin: (username: string, password: string) =>
+    http<{ ok: boolean; username: string }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  authLogout: () =>
+    http<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
+  authChangePassword: (currentPassword: string, newPassword: string) =>
+    http<{ ok: boolean }>('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  authChangeUsername: (currentPassword: string, username: string) =>
+    http<{ ok: boolean; username: string }>('/api/auth/change-username', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, username }),
+    }),
+  authRevokeAll: (currentPassword: string) =>
+    http<{ ok: boolean }>('/api/auth/revoke-all', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword }),
+    }),
   health: () => http<HealthReport>('/api/health'),
   settings: () => http<PublicSettings>('/api/settings'),
   saveSettings: (patch: Partial<PublicSettings>) =>
@@ -180,6 +281,8 @@ export const api = {
       '/api/settings/apple-credentials/login',
       { method: 'POST' },
     ),
+  appleLoginStatus: () =>
+    http<WrapperLoginStatus>('/api/settings/apple-credentials/login-status'),
   submitAppleTwoFa: (code: string) =>
     http<{ ok: boolean }>('/api/settings/apple-credentials/2fa', {
       method: 'POST',

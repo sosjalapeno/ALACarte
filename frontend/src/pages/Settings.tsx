@@ -1,10 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Copy,
   Lock,
   Key,
   Globe,
   FolderOpen,
+  ShieldCheck,
+  User as UserIcon,
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -18,6 +23,7 @@ import { Button } from '../components/Button'
 import { Input } from '../components/Input'
 import { Modal } from '../components/Modal'
 import { StaggeredList, StaggeredItem } from '../components/StaggeredList'
+import { cx } from '../lib/cx'
 
 
 const STOREFRONTS = [
@@ -253,6 +259,12 @@ export function SettingsPage() {
         </StaggeredItem>
 
         <StaggeredItem>
+          <SettingsCard icon={<ShieldCheck className="h-4 w-4" />} title="Account">
+            <AccountSection onFlash={flash} />
+          </SettingsCard>
+        </StaggeredItem>
+
+        <StaggeredItem>
           <footer className="pb-1 pt-1 text-center text-xs text-white/45">
             Built by{' '}
             <a
@@ -293,6 +305,7 @@ function SettingsCard({
 type LoginPhase =
   | 'idle'
   | 'preparing'
+  | 'checking-network'
   | 'creating'
   | 'signing-in'
   | '2fa-required'
@@ -304,6 +317,7 @@ type LoginPhase =
 function phaseLabel(p: LoginPhase): string {
   switch (p) {
     case 'preparing': return 'Preparing sign-in…'
+    case 'checking-network': return 'Checking Apple service reachability…'
     case 'creating': return 'Preparing secure container…'
     case 'signing-in': return 'Signing in to Apple Music — this can take up to 90 seconds'
     case '2fa-required': return 'Waiting for your 2FA code'
@@ -327,6 +341,8 @@ function AppleCredsForm({
   const [password, setPassword] = useState('')
   const [phase, setPhase] = useState<LoginPhase>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [failureTail, setFailureTail] = useState<string[]>([])
+  const [showFailureTail, setShowFailureTail] = useState(false)
   const [showTwoFa, setShowTwoFa] = useState(false)
 
   useEventStream((type, data) => {
@@ -340,10 +356,14 @@ function AppleCredsForm({
     }
     if (data.phase === 'failed') {
       setError(data.error || 'Sign-in failed')
+      setFailureTail(Array.isArray(data.tail) ? data.tail.map(String) : [])
+      setShowFailureTail(false)
       setSaving(false)
     }
     if (data.phase === 'ready') {
       setError(null)
+      setFailureTail([])
+      setShowFailureTail(false)
       setSaving(false)
       onChange()
     }
@@ -355,6 +375,8 @@ function AppleCredsForm({
     e.preventDefault()
     if (!email || !password) return
     setError(null)
+    setFailureTail([])
+    setShowFailureTail(false)
     setPhase('preparing')
     setSaving(true)
     try {
@@ -502,6 +524,50 @@ function AppleCredsForm({
           <Badge variant="bad" className="max-w-full">
             <span className="truncate">{error}</span>
           </Badge>
+        )}
+        {error && (
+          <div className="-mt-1 ml-0.5 text-xs text-white/60">
+            <a
+              href="https://github.com/sosjalapeno/alacarte#sign-in-troubleshooting"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-accent/60 underline-offset-2 text-accent hover:text-white"
+            >
+              troubleshooting
+            </a>
+          </div>
+        )}
+        {phase === 'failed' && failureTail.length > 0 && (
+          <div className="space-y-2 rounded-app border border-white/[0.08] bg-white/[0.02] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setShowFailureTail((v) => !v)}
+                className="inline-flex items-center gap-1.5 text-xs text-white/70 hover:text-white"
+              >
+                {showFailureTail ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                Show wrapper log
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(failureTail.join('\n'))
+                  } catch {}
+                }}
+                className="inline-flex items-center gap-1.5 text-xs text-white/60 hover:text-white"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copy
+              </button>
+            </div>
+            {showFailureTail && (
+              <pre className="max-h-52 overflow-auto rounded-app border border-white/[0.06] bg-black/35 px-3 py-2 text-[11px] leading-5 text-white/80 font-mono whitespace-pre-wrap break-words">
+                {/* Backend already redacts Apple email/password to [redacted-email]/[redacted-password]. */}
+                {failureTail.join('\n')}
+              </pre>
+            )}
+          </div>
         )}
         {!error && phase !== 'idle' && phase !== 'failed' && (
           <Badge variant={phase === 'ready' ? 'ok' : 'accent'} className="max-w-full">
@@ -651,5 +717,347 @@ function MediaUserTokenForm({ settings, onChange }: { settings: PublicSettings; 
       </div>
       {msg && <div className="text-xs text-white/60">{msg}</div>}
     </form>
+  )
+}
+
+const PASSWORD_MIN = 12
+const USERNAME_MIN = 2
+const USERNAME_MAX = 32
+const USERNAME_REGEX = /^[a-zA-Z0-9._-]+$/
+
+function AccountSection({ onFlash }: { onFlash: (msg: string, err?: boolean) => void }) {
+  const [username, setUsername] = useState<string | null>(null)
+  const [showRevoke, setShowRevoke] = useState(false)
+  const [revokePassword, setRevokePassword] = useState('')
+  const [revoking, setRevoking] = useState(false)
+  const [revokeError, setRevokeError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api
+      .authState()
+      .then((s) => setUsername(s.username))
+      .catch(() => {})
+  }, [])
+
+  return (
+    <motion.div
+      layout
+      transition={{ layout: { type: 'spring', stiffness: 380, damping: 32 } }}
+      className="space-y-6"
+    >
+      {username && (
+        <div className="flex items-center gap-3 rounded-app border border-white/[0.06] bg-white/[0.025] px-4 py-3">
+          <div className="h-9 w-9 shrink-0 rounded-full bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] flex items-center justify-center text-[rgb(var(--accent))]">
+            <UserIcon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs uppercase tracking-wide text-white/40">Signed in as</div>
+            <div className="text-sm font-medium text-white truncate">{username}</div>
+          </div>
+        </div>
+      )}
+
+      <ChangeUsernameForm
+        currentUsername={username}
+        onUpdated={(name) => {
+          setUsername(name)
+          onFlash('Username updated')
+        }}
+      />
+
+      <div className="border-t border-white/[0.06]" />
+
+      <ChangePasswordForm onUpdated={() => onFlash('Password updated')} />
+
+      <div className="border-t border-white/[0.06]" />
+
+      <div className="space-y-3">
+        <Button
+          onClick={() => {
+            setShowRevoke((v) => !v)
+            setRevokeError(null)
+          }}
+          className="bg-white/[0.02]"
+        >
+          Sign out on all devices
+        </Button>
+        {showRevoke && (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault()
+              if (!revokePassword || revoking) return
+              setRevoking(true)
+              setRevokeError(null)
+              try {
+                await api.authRevokeAll(revokePassword)
+                setRevokePassword('')
+                setShowRevoke(false)
+                onFlash('Signed out on all other devices.')
+              } catch (err: any) {
+                setRevokeError(err?.message || 'Failed to revoke sessions')
+              } finally {
+                setRevoking(false)
+              }
+            }}
+            className="space-y-2"
+          >
+            <Input
+              type="password"
+              placeholder="Current password"
+              value={revokePassword}
+              onChange={(e) => {
+                setRevokePassword(e.target.value)
+                if (revokeError) setRevokeError(null)
+              }}
+              autoComplete="current-password"
+              disabled={revoking}
+            />
+            {revokeError && <div className="text-xs text-rose-300">{revokeError}</div>}
+            <div className="flex items-center gap-2">
+              <Button type="submit" disabled={revoking || !revokePassword}>
+                {revoking ? 'Revoking…' : 'Confirm sign out everywhere'}
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowRevoke(false)
+                  setRevokePassword('')
+                  setRevokeError(null)
+                }}
+                disabled={revoking}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
+    </motion.div>
+  )
+}
+
+function ChangeUsernameForm({
+  currentUsername,
+  onUpdated,
+}: {
+  currentUsername: string | null
+  onUpdated: (newUsername: string) => void
+}) {
+  const [next, setNext] = useState('')
+  const [pw, setPw] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const trimmed = next.trim()
+  const tooShort = trimmed.length > 0 && trimmed.length < USERNAME_MIN
+  const tooLong = trimmed.length > USERNAME_MAX
+  const badChars = trimmed.length > 0 && !USERNAME_REGEX.test(trimmed)
+  const sameAsCurrent = currentUsername != null && trimmed === currentUsername
+  const valid =
+    trimmed.length >= USERNAME_MIN && trimmed.length <= USERNAME_MAX && !badChars && !sameAsCurrent
+  const canSubmit = !submitting && valid && pw.length > 0
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!canSubmit) return
+    setErr(null)
+    setSubmitting(true)
+    try {
+      const res = await api.authChangeUsername(pw, trimmed)
+      setNext('')
+      setPw('')
+      onUpdated(res.username)
+    } catch (e: any) {
+      setErr(e?.message || 'Failed to change username')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div className="text-sm font-medium text-white/85">Change username</div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <Input
+          type="text"
+          placeholder="New username"
+          value={next}
+          onChange={(e) => {
+            setNext(e.target.value)
+            if (err) setErr(null)
+          }}
+          autoComplete="username"
+          spellCheck={false}
+          autoCapitalize="none"
+          autoCorrect="off"
+          disabled={submitting}
+          className={cx(
+            (tooShort || tooLong || badChars) &&
+              'border-rose-400/50 focus:border-rose-400/70 focus:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
+          )}
+        />
+        <Input
+          type="password"
+          placeholder="Current password"
+          value={pw}
+          onChange={(e) => {
+            setPw(e.target.value)
+            if (err) setErr(null)
+          }}
+          autoComplete="current-password"
+          disabled={submitting}
+        />
+      </div>
+      <HintSlot
+        hint={
+          err
+            ? { tone: 'error', text: err }
+            : badChars
+              ? { tone: 'warn', text: 'Username can use letters, digits, dots, underscores, and hyphens.' }
+              : tooShort
+                ? { tone: 'warn', text: `Username must be at least ${USERNAME_MIN} characters.` }
+                : tooLong
+                  ? { tone: 'warn', text: `Username must be no more than ${USERNAME_MAX} characters.` }
+                  : sameAsCurrent
+                    ? { tone: 'dim', text: 'Pick a different username to update.' }
+                    : null
+        }
+      />
+      <div>
+        <Button
+          type="submit"
+          className={cx(!canSubmit && 'opacity-50 cursor-not-allowed pointer-events-none')}
+          disabled={!canSubmit}
+        >
+          {submitting ? 'Saving…' : 'Change username'}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function ChangePasswordForm({ onUpdated }: { onUpdated: () => void }) {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const tooShort = next.length > 0 && next.length < PASSWORD_MIN
+  const mismatch = confirm.length > 0 && confirm !== next
+  const canSubmit =
+    !submitting &&
+    current.length > 0 &&
+    next.length >= PASSWORD_MIN &&
+    confirm === next
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!canSubmit) return
+    setErr(null)
+    setSubmitting(true)
+    try {
+      await api.authChangePassword(current, next)
+      setCurrent('')
+      setNext('')
+      setConfirm('')
+      onUpdated()
+    } catch (e: any) {
+      setErr(e?.message || 'Failed to change password')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div className="text-sm font-medium text-white/85">Change password</div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <Input
+          type="password"
+          placeholder="Current password"
+          value={current}
+          onChange={(e) => {
+            setCurrent(e.target.value)
+            if (err) setErr(null)
+          }}
+          autoComplete="current-password"
+          disabled={submitting}
+        />
+        <Input
+          type="password"
+          placeholder="New password"
+          value={next}
+          onChange={(e) => {
+            setNext(e.target.value)
+            if (err) setErr(null)
+          }}
+          autoComplete="new-password"
+          disabled={submitting}
+          className={cx(
+            tooShort &&
+              'border-rose-400/50 focus:border-rose-400/70 focus:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
+          )}
+        />
+        <Input
+          type="password"
+          placeholder="Confirm new password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          autoComplete="new-password"
+          disabled={submitting}
+          className={cx(
+            mismatch &&
+              'border-rose-400/50 focus:border-rose-400/70 focus:shadow-[0_0_0_3px_rgba(244,63,94,0.18)]',
+          )}
+        />
+      </div>
+      <HintSlot
+        hint={
+          err
+            ? { tone: 'error', text: err }
+            : tooShort
+              ? { tone: 'warn', text: `Password: at least ${PASSWORD_MIN} characters.` }
+              : mismatch
+                ? { tone: 'warn', text: 'Passwords don’t match.' }
+                : null
+        }
+      />
+      <div>
+        <Button
+          type="submit"
+          className={cx(!canSubmit && 'opacity-50 cursor-not-allowed pointer-events-none')}
+          disabled={!canSubmit}
+        >
+          {submitting ? 'Saving…' : 'Change password'}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+type HintTone = 'dim' | 'warn' | 'error'
+
+const HINT_TONE: Record<HintTone, string> = {
+  dim: 'text-white/45',
+  warn: 'text-amber-300/85',
+  error: 'text-rose-300',
+}
+
+function HintSlot({ hint }: { hint: { tone: HintTone; text: string } | null }) {
+  return (
+    <AnimatePresence initial={false}>
+      {hint && (
+        <motion.div
+          key="hint-slot"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+          style={{ overflow: 'hidden' }}
+        >
+          <div className={cx('pt-1 text-xs', HINT_TONE[hint.tone])}>{hint.text}</div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }

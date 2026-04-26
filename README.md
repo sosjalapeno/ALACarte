@@ -59,7 +59,35 @@ Output lands in `/music/<Artist>/<Album>/01. Track.flac` (or `/music/<Artist>/Si
 2. Copy `.env.example` to `.env` and set `MUSIC_PATH` to your music library folder
 3. Run `docker compose up -d --build`
 4. Open `http://<your-host>:7373`
-5. Go to Settings → enter your Apple ID email, password, and preferred storefront
+5. Grab the one-time setup token from logs (`docker compose logs alacarte-web`) and use it on the welcome screen with your new username/password
+6. Go to Settings → enter your Apple ID email, password, and preferred storefront
+
+## Upgrade notes
+
+Upgrading an existing deployment:
+
+1. Pull latest changes and rebuild: `docker compose up -d --build`
+2. If your current install has no auth configured yet, open the UI and complete first-time setup with the one-time setup token from logs.
+3. If you already have auth configured, sign in normally.
+
+No manual data migration is required for `data/web/settings.json` or existing encrypted Apple credentials.
+
+## Security
+
+ALACarte ships with a built-in single-password gate. The first time you visit the UI, you'll be prompted to set a username/password and the one-time setup token from server logs — every API endpoint and page is then locked behind it.
+
+A few things to keep in mind:
+
+- **Don't expose this directly to the public internet.** Several cloud providers ship hosts with permissive default firewalls. Verify your firewall, and put a reverse proxy / VPN / mesh network in front of the UI before opening it up to anything beyond your LAN.
+- **`/var/run/docker.sock` is mounted into the web container** so it can spawn the wrapper container during first-time Apple login. That effectively grants the web container root on the host — another reason not to expose it directly.
+- **Tighten the bind to localhost only:** set `WEB_BIND=127.0.0.1` in `.env` if you front the app with a reverse proxy on the same machine and don't want the UI reachable on your LAN.
+- **Already running your own auth?** Set `AUTH_DISABLED=true` in `.env` to skip the built-in password gate (e.g. when fronting with Authelia, Cloudflare Access, Tailscale, etc).
+- **Rate limiting and lockouts are built in** for setup/login/password-change routes (429 + Retry-After + temporary lockouts).
+- **Sessions support revoke-all** from Settings → Account ("Sign out on all devices").
+- **Password hashing uses memory-hard scrypt** (`N=131072, r=8, p=1`).
+- **Trust proxy and secure cookies:** set `TRUST_PROXY` correctly when running behind a reverse proxy so HTTPS detection and cookie security are accurate.
+- **Existing users are preserved:** current encrypted Apple credentials in `data/web/settings.json` continue to decrypt after upgrading.
+- **Change or reset:** the password lives at `data/web/auth.json`. Change it from Settings → Account, or reset by deleting that file and restarting the container — the next visit will prompt for a new one.
 
 ## First login flow
 
@@ -69,6 +97,16 @@ ALACarte needs to authenticate with Apple to obtain decryption tokens. This happ
 2. If Apple requires 2FA, you'll see a prompt asking for the code sent to your Apple devices.
 3. Enter the code within ~2 minutes.
 4. When you see "Ready", you're good to search and download.
+
+### Sign-in troubleshooting
+
+If Apple sign-in fails, check these first:
+
+1. Confirm the Apple ID has an active Apple Music subscription on `music.apple.com`.
+2. Confirm the Apple ID has signed into Apple Music at least once on a real Apple device or on the web app.
+3. Confirm the host IP is not in a VPS/datacenter range Apple commonly blocks.
+4. Confirm the storefront in Settings matches the Apple ID's region.
+5. Confirm you're running the latest image/build (newer builds include login parser fixes and richer wrapper diagnostics).
 
 ## How downloads behave
 
@@ -89,8 +127,6 @@ ALACarte needs to authenticate with Apple to obtain decryption tokens. This happ
 
 **Storage** - Lossless albums are ~300–600 MB each.
 - The staging area uses temporary space under `/music/.amdl-tmp/` while working.
-
-**Docker socket access** The web container mounts `/var/run/docker.sock` so it can spawn the wrapper container for first-time Apple ID login and 2FA. That effectively grants the web container root on the host. Only expose the UI on trusted networks, and don't host this on the open internet without a reverse proxy + auth in front of it.
 
 **Sharing a network with Jellyfin/Plex/etc.** By default ALACarte creates its own `alacarte-net` Docker network. If you'd rather attach to an existing network (e.g. the one your media server already uses), set `DOCKER_NETWORK=<name>` and `DOCKER_NETWORK_EXTERNAL=true` in `.env`.
 

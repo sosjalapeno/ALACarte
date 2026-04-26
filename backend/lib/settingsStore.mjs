@@ -3,6 +3,8 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import crypto from 'node:crypto'
 
+import { getRawKey } from './secretKey.mjs'
+
 const CONFIG_DIR = process.env.AMDL_CONFIG_DIR || '/config'
 const SECRET_FILE = path.join(CONFIG_DIR, '.secret')
 const SETTINGS_FILE = path.join(CONFIG_DIR, 'settings.json')
@@ -42,14 +44,9 @@ export async function ensureConfigDir(dir = CONFIG_DIR) {
   }
 }
 
-function loadKey() {
-  const hex = fs.readFileSync(SECRET_FILE, 'utf8').trim()
-  return Buffer.from(hex, 'hex')
-}
-
 export function encryptSecret(plaintext) {
   if (plaintext == null || plaintext === '') return null
-  const key = loadKey()
+  const key = getRawKey()
   const iv = crypto.randomBytes(12)
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
   const enc = Buffer.concat([
@@ -63,7 +60,7 @@ export function encryptSecret(plaintext) {
 export function decryptSecret(b64) {
   if (!b64) return null
   try {
-    const key = loadKey()
+    const key = getRawKey()
     const buf = Buffer.from(b64, 'base64')
     const iv = buf.subarray(0, 12)
     const tag = buf.subarray(12, 28)

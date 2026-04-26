@@ -42,6 +42,8 @@ services:
       - AMDL_MUSIC_PATH=/music
       - AMDL_CONFIG_DIR=/config
       - AMDL_SECRET_KEY=${AMDL_SECRET_KEY:-}
+      - AUTH_DISABLED=${AUTH_DISABLED:-false}
+      - TRUST_PROXY=${TRUST_PROXY:-loopback}
     volumes:
       - ./data/web:/config
       - ${MUSIC_PATH:?Set MUSIC_PATH in .env}:/music
@@ -52,8 +54,11 @@ services:
       # wrapper container automatically. Treat this as root-on-host access;
       # only expose the web UI on trusted networks.
       - /var/run/docker.sock:/var/run/docker.sock
+    # Default (WEB_BIND unset/empty) publishes on all interfaces — same as
+    # docker's default. Set WEB_BIND=127.0.0.1 in .env to restrict the UI to
+    # the host machine only when fronting with a reverse proxy.
     ports:
-      - "${WEB_PORT:-7373}:7373"
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-7373}:7373"
     networks:
       - alacarte-net
     restart: unless-stopped

@@ -1,4 +1,6 @@
 import express from 'express'
+import cookieParser from 'cookie-parser'
+import helmet from 'helmet'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -12,17 +14,70 @@ import { downloadRouter } from './routes/download.mjs'
 import { queueRouter } from './routes/queue.mjs'
 import { eventsRouter } from './routes/events.mjs'
 import { libraryRouter } from './routes/library.mjs'
+import { authRouter } from './routes/auth.mjs'
 import { ensureConfigDir } from './lib/settingsStore.mjs'
+import { loadSecretsAtBoot } from './lib/secretKey.mjs'
+import { originGuard } from './lib/originGuard.mjs'
+import { isPasswordSet } from './lib/authStore.mjs'
+import { generateSetupToken } from './lib/setupToken.mjs'
+import { isAuthDisabled, requireAuth } from './lib/requireAuth.mjs'
 
 const PORT = Number(process.env.PORT || 7373)
 const CONFIG_DIR = process.env.AMDL_CONFIG_DIR || '/config'
 const MUSIC_PATH = process.env.AMDL_MUSIC_PATH || '/music'
 
 await ensureConfigDir(CONFIG_DIR)
+loadSecretsAtBoot(CONFIG_DIR)
+
+const setupToken =
+  !isAuthDisabled() && !(await isPasswordSet())
+    ? generateSetupToken()
+    : null
+
+if (setupToken) {
+  console.log(`[auth] one-time setup token: ${setupToken}  (use it in the X-Setup-Token header)`)
+}
 
 const app = express()
 app.disable('x-powered-by')
-app.use(express.json({ limit: '1mb' }))
+app.set('trust proxy', process.env.TRUST_PROXY || 'loopback')
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'self'"],
+        imgSrc: ["'self'", 'https://*.mzstatic.com', 'data:'],
+        connectSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        fontSrc: ["'self'", 'https:', 'data:'],
+        objectSrc: ["'none'"],
+        scriptSrcAttr: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    },
+    hsts: {
+      maxAge: 15552000,
+      includeSubDomains: true,
+    },
+    crossOriginOpenerPolicy: { policy: 'same-origin' },
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+    referrerPolicy: { policy: 'no-referrer' },
+  }),
+)
+app.use(express.json({ limit: '64kb' }))
+app.use(cookieParser())
+app.use(originGuard())
+
+if (isAuthDisabled()) {
+  console.warn(
+    '[auth] AUTH_DISABLED=true — built-in password gate is OFF. ' +
+      'Only safe when fronted by your own auth (reverse proxy, VPN, mesh network).',
+  )
+}
 
 app.use((req, _res, next) => {
   const stamp = new Date().toISOString()
@@ -31,6 +86,11 @@ app.use((req, _res, next) => {
   }
   next()
 })
+
+// Auth router is mounted before the guard so /state, /setup, and /login
+// remain reachable for bootstrap. The guard then protects everything else.
+app.use('/api/auth', authRouter)
+app.use(requireAuth())
 
 app.use('/api/health', healthRouter)
 app.use('/api/settings', settingsRouter)

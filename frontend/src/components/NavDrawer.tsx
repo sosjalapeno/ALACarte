@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { createPortal } from 'react-dom'
 import { NavLink, useLocation } from 'react-router-dom'
@@ -7,8 +7,13 @@ import {
   Home as HomeIcon,
   Search as SearchIcon,
   Library as LibraryIcon,
+  LogOut,
   Settings2,
 } from 'lucide-react'
+
+import { api } from '../api/client'
+import { Button } from './Button'
+import { Modal } from './Modal'
 
 type Props = {
   open: boolean
@@ -18,6 +23,29 @@ type Props = {
 export function NavDrawer({ open, onClose }: Props) {
   const location = useLocation()
   const touchStartX = useRef<number | null>(null)
+  const [confirmSignOut, setConfirmSignOut] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+
+  const requestSignOut = () => {
+    setConfirmSignOut(true)
+    onClose()
+  }
+
+  const cancelSignOut = () => {
+    if (signingOut) return
+    setConfirmSignOut(false)
+  }
+
+  const confirmAndSignOut = async () => {
+    if (signingOut) return
+    setSigningOut(true)
+    try {
+      await api.authLogout()
+    } catch {
+      // ignore — reload regardless so the auth gate shows
+    }
+    window.location.reload()
+  }
 
   useEffect(() => {
     if (open) onClose()
@@ -88,9 +116,52 @@ export function NavDrawer({ open, onClose }: Props) {
             </div>
             <DrawerRow to="/status" icon={Activity} label="Status" />
             <DrawerRow to="/settings" icon={Settings2} label="Settings" />
+
+            <DrawerButton
+              icon={LogOut}
+              label="Sign Out"
+              onClick={requestSignOut}
+            />
           </motion.aside>
         </>
       )}
+      <Modal
+        open={confirmSignOut}
+        onClose={cancelSignOut}
+        placement="center"
+        label="Confirm sign out"
+        className="!max-w-[24rem]"
+      >
+        <div className="p-6">
+          <div className="flex items-start gap-4">
+            <div
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[rgba(var(--accent),0.12)] border border-[rgba(var(--accent),0.25)] text-[rgb(var(--accent))]"
+              aria-hidden
+            >
+              <LogOut className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-white">Sign out?</h2>
+              <p className="mt-1 text-sm text-white/60">
+                You'll need to sign in again next time you open ALACarte.
+              </p>
+            </div>
+          </div>
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button onClick={cancelSignOut} disabled={signingOut} variant="ghost">
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmAndSignOut}
+              disabled={signingOut}
+              className="bg-[rgba(var(--accent),0.18)] border-[rgba(var(--accent),0.4)] text-white hover:bg-[rgba(var(--accent),0.28)] hover:text-white"
+            >
+              <LogOut className="h-4 w-4" />
+              {signingOut ? 'Signing out…' : 'Sign Out'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </AnimatePresence>,
     document.body,
   )
@@ -118,5 +189,31 @@ function DrawerRow({
       </span>
       <span>{label}</span>
     </NavLink>
+  )
+}
+
+function DrawerButton({
+  icon: Icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  onClick: () => void
+  disabled?: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="group flex w-full items-center gap-3 rounded-[14px] px-3 py-2 text-left text-[0.95rem] font-medium text-white/80 transition-[background,color] duration-[160ms] ease-smooth hover:bg-[rgb(var(--accent))] hover:text-[#0a0a0a] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent disabled:hover:text-white/80"
+    >
+      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-white/85 transition-[background,color] duration-[160ms] ease-smooth group-hover:bg-black/15 group-hover:text-[#0a0a0a]">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span>{label}</span>
+    </button>
   )
 }

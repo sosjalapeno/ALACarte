@@ -13,16 +13,26 @@ const TEMP_CONTAINER = 'alacarte-wrapper-login'
 const DEFAULT_NETWORK = 'alacarte-net'
 const WRAPPER_DATA_IN_WEB = '/wrapper-data'
 
+const REACHABILITY_ERROR = 'Apple services are not reachable from this host. This usually happens on VPS / datacenter IPs that Apple blocks. Try a residential network or a residential proxy and retry.'
+const RESPONSE_TYPE_HINTS = {
+  4: "Apple rejected the sign-in before 2FA. Common causes: wrong password, Apple ID without an active Apple Music subscription, account never activated for Apple Music, or this host's IP is blocked by Apple (common on VPS / datacenter networks).",
+}
+// TODO: response types 0/1/2/3/5/7 are still empirically unknown.
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 function validateEmail(e) {
   if (typeof e !== 'string' || e.length < 3 || e.length > 320) return false
   return EMAIL_RE.test(e)
 }
 function validatePassword(p) {
-  if (typeof p !== 'string' || p.length < 1 || p.length > 512) return false
+  return passwordValidationError(p) == null
+}
+
+function passwordValidationError(p) {
+  if (typeof p !== 'string' || p.length < 1 || p.length > 512) return 'Invalid password'
   // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(p)) return false
-  return true
+  if (/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(p)) return 'Invalid password'
+  return null
 }
 function validate2faCode(c) {
   return typeof c === 'string' && /^\d{4,8}$/.test(c.trim())
@@ -192,6 +202,18 @@ export async function isDockerReachable() {
   }
 }
 
+async function checkAppleReachability() {
+  try {
+    const res = await fetch('https://buy.itunes.apple.com/', {
+      method: 'HEAD',
+      signal: AbortSignal.timeout(5000),
+    })
+    return res.status < 500
+  } catch {
+    return false
+  }
+}
+
 export function startWrapperLogin({ email, password }) {
   if (active) {
     return Promise.reject(new Error('A sign-in is already in progress'))
@@ -207,7 +229,7 @@ export function startWrapperLogin({ email, password }) {
     return Promise.reject(new Error('Invalid email format'))
   }
   if (!validatePassword(password)) {
-    return Promise.reject(new Error('Invalid password'))
+    return Promise.reject(new Error(passwordValidationError(password) || 'Invalid password'))
   }
 
   active = {
@@ -241,6 +263,12 @@ export function startWrapperLogin({ email, password }) {
 
 async function runLoginFlow() {
   emitStatus({ phase: 'preparing' })
+  emitStatus({ phase: 'checking-network' })
+  const reachable = await checkAppleReachability()
+  if (!reachable) {
+    await finalizeFailure(REACHABILITY_ERROR)
+    return
+  }
   await safeRemoveContainer(TEMP_CONTAINER)
   const spec = await captureWrapperSpec()
   active.wrapperSpec = spec
@@ -255,6 +283,7 @@ async function runLoginFlow() {
   const container = await docker.createContainer({
     name: TEMP_CONTAINER,
     Image: WRAPPER_IMAGE,
+    Env: ['LD_PRELOAD=/app/libwrapper_strtok_fix.so'],
     Entrypoint: ['/app/wrapper'],
     Cmd: ['-L', loginArg, '-F', '-H', '0.0.0.0'],
     ExposedPorts: {
@@ -371,8 +400,13 @@ function extractWrapperFailureReason(s) {
 
   for (let i = lines.length - 1; i >= 0; i--) {
     const l = lines[i]
-    if (/\[\.\] response type/i.test(l)) {
-      return `Wrapper reported: ${l}`
+    const m = l.match(/\[\.\]\s*response type\s+(\d+)/i)
+    if (m) {
+      const type = Number(m[1])
+      if (Number.isFinite(type) && RESPONSE_TYPE_HINTS[type]) {
+        return RESPONSE_TYPE_HINTS[type]
+      }
+      return `Apple rejected the sign-in (wrapper response type ${type}). See the troubleshooting section in the README.`
     }
   }
 
@@ -412,11 +446,11 @@ async function finalizeFailure(reason) {
   if (!active || active.terminated) return
   active.terminated = true
   clearTimeout(active.overallTimeout)
-  const tail = (active.collected || '').slice(-1800)
+  const tail = buildFailureTail(active.collected || '')
   console.error(
-    `[wrapper-login] failed: ${reason}\n--- wrapper output (tail, redacted) ---\n${tail}`,
+    `[wrapper-login] failed: ${reason}\n--- wrapper output (tail, redacted) ---\n${tail.join('\n')}`,
   )
-  emitStatus({ phase: 'failed', error: reason })
+  emitStatus({ phase: 'failed', error: reason, tail })
   try {
     if (active.container) {
       try {
@@ -430,6 +464,15 @@ async function finalizeFailure(reason) {
     resetActive()
     reject?.(new Error(reason))
   }
+}
+
+function buildFailureTail(collected) {
+  return String(collected)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^__bionic_|^\[\+\]\s*starting|^\[\+\]\s*initializing/i.test(line))
+    .slice(-15)
 }
 
 export async function submit2FA(code) {
