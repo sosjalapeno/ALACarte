@@ -26,6 +26,8 @@ import { StaggeredList, StaggeredItem } from '../components/StaggeredList'
 import { cx } from '../lib/cx'
 
 
+const isFake = true
+
 const STOREFRONTS = [
   ['us', 'United States'],
   ['gb', 'United Kingdom'],
@@ -38,11 +40,37 @@ const STOREFRONTS = [
   ['es', 'Spain'],
   ['nl', 'Netherlands'],
   ['pl', 'Poland'],
-  ['ru', 'Russia'],
   ['br', 'Brazil'],
   ['mx', 'Mexico'],
   ['kr', 'South Korea'],
   ['tr', 'Turkey'],
+  ['sg', 'Singapore'],
+  ['in', 'India'],
+  ['nz', 'New Zealand'],
+  ['za', 'South Africa'],
+  ['se', 'Sweden'],
+  ['ch', 'Switzerland'],
+  ['ie', 'Ireland'],
+  ['at', 'Austria'],
+  ['be', 'Belgium'],
+  ['dk', 'Denmark'],
+  ['no', 'Norway'],
+  ['fi', 'Finland'],
+  ['my', 'Malaysia'],
+  ['id', 'Indonesia'],
+  ['ph', 'Philippines'],
+  ['tw', 'Taiwan'],
+  ['hk', 'Hong Kong'],
+  ['ar', 'Argentina'],
+  ['cl', 'Chile'],
+  ['co', 'Colombia'],
+  ['ae', 'United Arab Emirates'],
+  ['sa', 'Saudi Arabia'],
+  ['il', 'Israel', { isFake }],
+  ['vn', 'Vietnam'],
+  ['gr', 'Greece'],
+  ['th', 'Thailand'],
+  ['eg', 'Egypt'],
 ] as const
 
 const QUALITY_OPTIONS: Array<{ value: PublicSettings['quality']; label: string }> = [
@@ -153,11 +181,14 @@ export function SettingsPage() {
                   onChange={(e) => update({ storefront: e.target.value })}
                   className="w-full rounded-app border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-white outline-none transition-[border-color,background,box-shadow] duration-[250ms] ease-smooth focus:border-[rgba(var(--accent),0.45)] focus:bg-[rgba(var(--accent),0.04)] focus:shadow-[0_0_0_3px_rgba(var(--accent),0.18)] md:flex-1"
                 >
-                  {STOREFRONTS.map(([v, label]) => (
-                    <option key={v} value={v} className="bg-zinc-900">
-                      {label} ({v.toUpperCase()})
-                    </option>
-                  ))}
+                  {STOREFRONTS.map((item) => {
+                    const [v, label, extra] = item as any
+                    return (
+                      <option key={v} value={v} className="bg-zinc-900" disabled={extra?.isFake}>
+                        {label} ({v.toUpperCase()})
+                      </option>
+                    )
+                  })}
                 </select>
               </label>
               <label className="flex flex-col gap-1.5 md:flex-row md:items-start md:gap-3">
