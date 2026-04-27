@@ -142,6 +142,10 @@ export type PublicSettings = {
   hasAppleCreds: boolean
   hasMediaUserToken: boolean
   hardBlockReason?: string | null
+  navidromeEnabled: boolean
+  navidromeUrl: string
+  navidromeUser: string | null
+  hasNavidromeCreds: boolean
 }
 
 export type LibrarySingle = {

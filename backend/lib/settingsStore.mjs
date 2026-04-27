@@ -26,6 +26,10 @@ const DEFAULTS = {
   appleEmail: null,
   applePassword: null,
   mediaUserToken: null,
+  navidromeEnabled: false,
+  navidromeUrl: 'http://navidrome:4533',
+  navidromeUser: null,
+  navidromePassword: null,
 }
 
 const QUALITY_VALUES = new Set(['flac', 'alac', 'atmos', 'aac'])
@@ -150,6 +154,20 @@ export async function readPublicSettings() {
       : null,
     hasAppleCreds: Boolean(s.appleEmail && s.applePassword),
     hasMediaUserToken: Boolean(s.mediaUserToken),
+    navidromeEnabled: Boolean(s.navidromeEnabled),
+    navidromeUrl: s.navidromeUrl,
+    navidromeUser: s.navidromeUser,
+    hasNavidromeCreds: Boolean(s.navidromeUser && s.navidromePassword),
+  }
+}
+
+export async function readNavidromeCreds() {
+  const s = await readSettings()
+  return {
+    enabled: Boolean(s.navidromeEnabled),
+    url: s.navidromeUrl,
+    user: s.navidromeUser,
+    password: decryptSecret(s.navidromePassword),
   }
 }
 

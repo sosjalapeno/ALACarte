@@ -12,6 +12,7 @@ import {
   normalizeAlbum,
   normalizePlaylist,
 } from './appleApi.mjs'
+import { triggerNavidromeScan } from './navidromeApi.mjs'
 import { writeAmdpConfig, spawnAmdp } from './amdpRunner.mjs'
 import {
   convertDirToFlac,
@@ -587,6 +588,7 @@ async function runJob(job) {
         finalDir: path.dirname(playlistPath),
       })
       await appendHistory(job)
+      triggerNavidromeScan().catch(console.error)
       return
     }
 
@@ -720,6 +722,7 @@ async function runJob(job) {
       finalDir,
     })
     await appendHistory(job)
+    triggerNavidromeScan().catch(console.error)
   } catch (err) {
     state.running.delete(job.id)
     if (err.name === 'AbortError') {

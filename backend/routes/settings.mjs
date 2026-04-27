@@ -32,6 +32,10 @@ const WRITABLE_KEYS = new Set([
   'explicitFilter',
   'lyricsFormat',
   'lyricsType',
+  'navidromeEnabled',
+  'navidromeUrl',
+  'navidromeUser',
+  'navidromePassword',
 ])
 
 const EXPLICIT_FILTER_VALUES = new Set(['explicit', 'clean', 'both'])
@@ -58,6 +62,14 @@ settingsRouter.put('/', async (req, res) => {
       if (k === 'lyricsFormat' && !LYRICS_FORMAT_VALUES.has(v)) continue
       if (k === 'lyricsType' && !LYRICS_TYPE_VALUES.has(v)) continue
       if (k === 'quality' && !QUALITY_VALUES.has(v)) continue
+      if (k === 'navidromePassword') {
+        if (v) {
+          patch[k] = encryptSecret(v)
+        } else {
+          patch[k] = null
+        }
+        continue
+      }
       patch[k] = v
     }
     await writeSettings(patch)

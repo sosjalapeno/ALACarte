@@ -330,6 +330,12 @@ export function SettingsPage() {
         </StaggeredItem>
 
         <StaggeredItem>
+          <SettingsCard icon={<Globe className="h-4 w-4" />} title="Navidrome Integration">
+            <NavidromeForm settings={settings} onChange={reload} onFlash={flash} />
+          </SettingsCard>
+        </StaggeredItem>
+
+        <StaggeredItem>
           <footer className="pb-1 pt-1 text-center text-xs text-white/45">
             Built by{' '}
             <a
@@ -775,6 +781,88 @@ function MediaUserTokenForm({ settings, onChange }: { settings: PublicSettings; 
         </AnimatePresence>
       </div>
       {msg && <div className="text-xs text-white/60">{msg}</div>}
+    </form>
+  )
+}
+
+function NavidromeForm({ settings, onChange, onFlash }: { settings: PublicSettings; onChange: () => void; onFlash: (msg: string, err?: boolean) => void }) {
+  const [enabled, setEnabled] = useState(settings.navidromeEnabled ?? false)
+  const [url, setUrl] = useState(settings.navidromeUrl || 'http://navidrome:4533')
+  const [user, setUser] = useState(settings.navidromeUser || '')
+  const [password, setPassword] = useState('')
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const patch: any = { navidromeEnabled: enabled, navidromeUrl: url, navidromeUser: user }
+      if (password) {
+        patch.navidromePassword = password
+      }
+      await api.saveSettings(patch)
+      onFlash('Saved')
+      setPassword('')
+      onChange()
+    } catch (err: any) {
+      onFlash(`Error: ${err.message}`, true)
+    }
+  }
+
+  return (
+    <form className="space-y-4" onSubmit={save}>
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          className="mt-0.5 shrink-0 focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent),0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
+        />
+        <div>
+          <div className="text-sm font-medium">Enable automatic Navidrome scan</div>
+          <div className="text-xs text-white/55 mt-0.5">
+            Triggers a Subsonic API scan immediately after a successful download.
+          </div>
+        </div>
+      </label>
+
+      {enabled && (
+        <div className="space-y-3 pt-2">
+          {settings.hasNavidromeCreds ? (
+            <div className="text-sm text-white/70">
+              Current: <span className="text-white">{settings.navidromeUser}</span>
+            </div>
+          ) : (
+            <div className="text-sm text-white/55">
+              No credentials stored. Enter your Navidrome admin credentials.
+            </div>
+          )}
+          <Input 
+            type="url" 
+            placeholder="Navidrome URL" 
+            value={url} 
+            onChange={(e) => setUrl(e.target.value)} 
+          />
+          <div className="grid gap-2 md:grid-cols-2">
+            <Input 
+              type="text" 
+              placeholder="Username" 
+              autoComplete="username"
+              value={user} 
+              onChange={(e) => setUser(e.target.value)} 
+            />
+            <Input 
+              type="password" 
+              placeholder="Password"
+              autoComplete="current-password"
+              value={password} 
+              onChange={(e) => setPassword(e.target.value)} 
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2 flex-wrap min-h-[40px]">
+        <Button type="submit">Save Navidrome settings</Button>
+      </div>
     </form>
   )
 }
