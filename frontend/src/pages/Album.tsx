@@ -44,8 +44,8 @@ export function AlbumPage() {
         (j) =>
           j.albumId === id &&
           (j.status === 'queued' || j.status === 'running'),
-      ) || jobs.find((j) => j.albumId === id && j.status === 'done'),
-    [jobs, id],
+      ) || ((album && isAlbumInLibrary(album)) ? jobs.find((j) => j.albumId === id && j.status === 'done') : undefined),
+    [jobs, id, album, isAlbumInLibrary],
   )
 
   useEffect(() => {
@@ -63,6 +63,7 @@ export function AlbumPage() {
       .then((r) => {
         if (!cancelled) {
           setAlbum(r.album)
+          verifyAlbumPresence(r.album, true)
         }
       })
       .catch((err) => {
@@ -73,7 +74,7 @@ export function AlbumPage() {
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [id, verifyAlbumPresence])
 
   const onDownload = async () => {
     if (!album) return

@@ -26,8 +26,8 @@ type LibraryPresenceContextValue = {
   ready: boolean
   isAlbumInLibrary: (album: AlbumLookup | null | undefined) => boolean
   isSongInLibrary: (song: SongLookup | null | undefined) => boolean
-  verifyAlbumPresence: (album: AlbumLookup | null | undefined) => Promise<boolean>
-  verifySongPresence: (song: SongLookup | null | undefined) => Promise<boolean>
+  verifyAlbumPresence: (album: AlbumLookup | null | undefined, force?: boolean) => Promise<boolean>
+  verifySongPresence: (song: SongLookup | null | undefined, force?: boolean) => Promise<boolean>
   refreshLibraryPresence: () => Promise<void>
 }
 
@@ -95,12 +95,12 @@ export function LibraryPresenceProvider({ children }: { children: React.ReactNod
   )
 
   const verifyAlbumPresence = useCallback(
-    async (album: AlbumLookup | null | undefined) => {
+    async (album: AlbumLookup | null | undefined, force = false) => {
       const artistName = String(album?.artistName || '').trim()
       const albumName = getAlbumName(album)
       const key = makeAlbumKey(album)
       if (!artistName || !albumName || !key) return false
-      if (snapshot.albumKeys[key]) return true
+      if (!force && snapshot.albumKeys[key]) return true
       const requestId = String(album?.id || key)
       const r = await api.libraryPresence({
         albums: [{ id: requestId, artistName, albumName }],
@@ -112,6 +112,13 @@ export function LibraryPresenceProvider({ children }: { children: React.ReactNod
             ? prev
             : { ...prev, albumKeys: { ...prev.albumKeys, [key]: true } },
         )
+      } else {
+        setSnapshot((prev) => {
+          if (!prev.albumKeys[key]) return prev
+          const next = { ...prev.albumKeys }
+          delete next[key]
+          return { ...prev, albumKeys: next }
+        })
       }
       return present
     },
@@ -119,12 +126,12 @@ export function LibraryPresenceProvider({ children }: { children: React.ReactNod
   )
 
   const verifySongPresence = useCallback(
-    async (song: SongLookup | null | undefined) => {
+    async (song: SongLookup | null | undefined, force = false) => {
       const artistName = String(song?.artistName || '').trim()
       const songName = getSongName(song)
       const key = makeSongKey(song)
       if (!artistName || !songName || !key) return false
-      if (snapshot.songKeys[key]) return true
+      if (!force && snapshot.songKeys[key]) return true
       const requestId = String(song?.id || key)
       const r = await api.libraryPresence({
         songs: [{ id: requestId, artistName, songName }],
@@ -136,6 +143,13 @@ export function LibraryPresenceProvider({ children }: { children: React.ReactNod
             ? prev
             : { ...prev, songKeys: { ...prev.songKeys, [key]: true } },
         )
+      } else {
+        setSnapshot((prev) => {
+          if (!prev.songKeys[key]) return prev
+          const next = { ...prev.songKeys }
+          delete next[key]
+          return { ...prev, songKeys: next }
+        })
       }
       return present
     },

@@ -26,6 +26,7 @@ export function AlbumCard({ album, size = 'md', alreadyInLibrary = false }: Prop
   const showRatingBadge =
     appSettings?.explicitFilter === 'both' &&
     (album.contentRating === 'explicit' || album.contentRating === 'clean')
+  const blocked = alreadyInLibrary || isAlbumInLibrary(album)
   const matching = useMemo(() => {
     const active = jobs.find(
       (j) =>
@@ -33,9 +34,9 @@ export function AlbumCard({ album, size = 'md', alreadyInLibrary = false }: Prop
         (j.status === 'queued' || j.status === 'running'),
     )
     if (active) return active
-    return jobs.find((j) => j.albumId === album.id) || null
-  }, [jobs, album.id])
-  const blocked = alreadyInLibrary || isAlbumInLibrary(album)
+    if (blocked) return jobs.find((j) => j.albumId === album.id) || null
+    return null
+  }, [jobs, album.id, blocked])
   const busyOrDone =
     (!!matching &&
       (matching.status === 'running' ||
