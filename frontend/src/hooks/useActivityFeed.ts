@@ -265,13 +265,25 @@ function buildJobSignature(job: Job) {
 
 function makeJobFeedItem(job: Job, ts: number, id: string): ActivityFeedItem {
   const label = jobLabel(job)
+  const importedTitle =
+    job.kind === 'song'
+      ? 'Track imported'
+      : job.kind === 'playlist'
+        ? 'Playlist imported'
+        : 'Album imported'
+  const queuedTitle =
+    job.kind === 'song'
+      ? 'Queued track import'
+      : job.kind === 'playlist'
+        ? 'Queued playlist import'
+        : 'Queued album import'
   if (job.status === 'done') {
     return {
       id,
       ts,
       source: 'job',
       severity: 'success',
-      title: job.kind === 'song' ? 'Track imported' : 'Album imported',
+      title: importedTitle,
       detail: `${label}${job.message ? ` · ${job.message}` : ''}`,
       jobId: job.id,
       jobStatus: job.status,
@@ -312,7 +324,7 @@ function makeJobFeedItem(job: Job, ts: number, id: string): ActivityFeedItem {
     ts,
     source: 'job',
     severity: 'warning',
-    title: job.kind === 'song' ? 'Queued track import' : 'Queued album import',
+    title: queuedTitle,
     detail: label,
     jobId: job.id,
     jobStatus: job.status,

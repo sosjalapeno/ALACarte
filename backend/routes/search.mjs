@@ -9,8 +9,8 @@ export const searchRouter = express.Router()
 searchRouter.get('/', async (req, res) => {
   try {
     const term = String(req.query.q || '').trim()
-    if (!term) return res.json({ albums: [], artists: [], songs: [] })
-    const types = String(req.query.types || 'albums,artists,songs')
+    if (!term) return res.json({ albums: [], artists: [], songs: [], playlists: [] })
+    const types = String(req.query.types || 'albums,artists,songs,playlists')
     const limit = Math.min(Number(req.query.limit || 25), 50)
     const offset = Math.max(Number(req.query.offset || 0), 0)
     const settings = await readSettings()
@@ -86,7 +86,18 @@ searchRouter.get('/', async (req, res) => {
       albums,
       settings.explicitFilter || 'explicit',
     )
-    res.json({ albums: filteredAlbums, artists, songs, storefront })
+    const playlists = (r.playlists?.data || []).map((x) => ({
+      id: x.id,
+      type: x.type,
+      name: x.attributes?.name,
+      curatorName: x.attributes?.curatorName || 'Apple Music',
+      trackCount: x.attributes?.trackCount,
+      artworkTemplate: x.attributes?.artwork?.url || null,
+      artworkColor: x.attributes?.artwork?.bgColor || null,
+      url: x.attributes?.url,
+      description: x.attributes?.description?.standard || '',
+    }))
+    res.json({ albums: filteredAlbums, artists, songs, playlists, storefront })
   } catch (err) {
     res.status(502).json({ error: err.message })
   }

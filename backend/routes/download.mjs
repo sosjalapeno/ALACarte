@@ -1,6 +1,12 @@
 import express from 'express'
 
-import { enqueueAlbum, enqueueSong, cancelJob, getJob } from '../lib/queue.mjs'
+import {
+  enqueueAlbum,
+  enqueuePlaylist,
+  enqueueSong,
+  cancelJob,
+  getJob,
+} from '../lib/queue.mjs'
 
 export const downloadRouter = express.Router()
 
@@ -24,6 +30,20 @@ downloadRouter.post('/song', async (req, res) => {
     if (!songId) return res.status(400).json({ error: 'songId required' })
     if (!albumId) return res.status(400).json({ error: 'albumId required' })
     const job = await enqueueSong({ songId, albumId, storefront })
+    res.status(202).json({ job })
+  } catch (err) {
+    if (err?.statusCode === 409 || err?.code === 'ALREADY_IN_LIBRARY') {
+      return res.status(409).json({ error: err.message || 'Already in library' })
+    }
+    res.status(500).json({ error: err.message })
+  }
+})
+
+downloadRouter.post('/playlist', async (req, res) => {
+  try {
+    const { playlistId, storefront, quality } = req.body || {}
+    if (!playlistId) return res.status(400).json({ error: 'playlistId required' })
+    const job = await enqueuePlaylist({ playlistId, storefront, quality })
     res.status(202).json({ job })
   } catch (err) {
     if (err?.statusCode === 409 || err?.code === 'ALREADY_IN_LIBRARY') {

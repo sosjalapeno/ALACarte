@@ -33,7 +33,7 @@ async function apiGet(url, { language = '' } = {}) {
 export async function searchCatalog({
   storefront,
   term,
-  types = 'albums,artists,songs',
+  types = 'albums,artists,songs,playlists',
   limit = 25,
   offset = 0,
   language = 'en-US',
@@ -69,6 +69,18 @@ export async function getArtist({ storefront, id, language = 'en-US' }) {
     l: language,
   })
   const url = `${BASE}/${encodeURIComponent(storefront)}/artists/${encodeURIComponent(id)}?${qs.toString()}`
+  return apiGet(url, { language })
+}
+
+export async function getPlaylist({ storefront, id, language = 'en-US' }) {
+  const qs = new URLSearchParams({
+    include: 'tracks',
+    'include[songs]': 'artists',
+    'include[albums]': 'artists',
+    extend: 'editorialVideo,extendedAssetUrls',
+    l: language,
+  })
+  const url = `${BASE}/${encodeURIComponent(storefront)}/playlists/${encodeURIComponent(id)}?${qs.toString()}`
   return apiGet(url, { language })
 }
 
@@ -117,6 +129,53 @@ export function normalizeAlbum(raw) {
     contentRating: a.contentRating,
     artworkTemplate: a.artwork?.url || null,
     artworkColor: a.artwork?.bgColor || null,
+    hasLossless: Boolean(a.audioTraits?.includes?.('lossless')),
+    hasHiRes: Boolean(a.audioTraits?.includes?.('hi-res-lossless')),
+    hasAtmos: Boolean(
+      a.audioTraits?.includes?.('atmos') ||
+        a.audioTraits?.includes?.('spatial'),
+    ),
+    tracks,
+  }
+}
+
+export function normalizePlaylist(raw) {
+  if (!raw) return null
+  const a = raw.attributes || {}
+  const curator = (raw.relationships?.curators?.data || [])[0]
+  const tracks = (raw.relationships?.tracks?.data || []).map((t) => {
+    const ta = t.attributes || {}
+    const artistsRel = t.relationships?.artists?.data || []
+    return {
+      id: t.id,
+      name: ta.name,
+      trackNumber: ta.trackNumber,
+      durationMs: ta.durationInMillis,
+      isrc: ta.isrc,
+      artistName: ta.artistName,
+      artistId: artistsRel[0]?.id || null,
+      albumName: ta.albumName,
+      artworkTemplate: ta.artwork?.url || null,
+      hasLossless: Boolean(ta.audioTraits?.includes?.('lossless')),
+      hasHiRes: Boolean(ta.audioTraits?.includes?.('hi-res-lossless')),
+      hasAtmos: Boolean(
+        ta.audioTraits?.includes?.('atmos') ||
+          ta.audioTraits?.includes?.('spatial'),
+      ),
+    }
+  })
+  return {
+    id: raw.id,
+    type: raw.type,
+    name: a.name,
+    description: a.description?.standard || '',
+    curatorName: curator?.attributes?.name || a.curatorName || 'Apple Music',
+    curatorId: curator?.id || null,
+    trackCount: a.trackCount,
+    url: a.url,
+    artworkTemplate: a.artwork?.url || null,
+    artworkColor: a.artwork?.bgColor || null,
+    lastModifiedDate: a.lastModifiedDate,
     hasLossless: Boolean(a.audioTraits?.includes?.('lossless')),
     hasHiRes: Boolean(a.audioTraits?.includes?.('hi-res-lossless')),
     hasAtmos: Boolean(

@@ -23,9 +23,11 @@ export function TopBar({ health, loading }: Props) {
   const isSearch = location.pathname === '/search'
   const isArtist = location.pathname.startsWith('/artist/')
   const isAlbum = location.pathname.startsWith('/album/')
+  const isPlaylist = location.pathname.startsWith('/playlist/')
   const isStatus = location.pathname === '/status'
   const isSettings = location.pathname === '/settings'
-  const showHomeShortcut = isSearch || isArtist || isStatus || isSettings || isAlbum
+  const showHomeShortcut =
+    isSearch || isArtist || isStatus || isSettings || isAlbum || isPlaylist
   const showCenterPill =
     location.pathname === '/' || location.pathname === '/library'
   const pageTitle =

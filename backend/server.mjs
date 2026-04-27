@@ -15,6 +15,7 @@ import { queueRouter } from './routes/queue.mjs'
 import { eventsRouter } from './routes/events.mjs'
 import { libraryRouter } from './routes/library.mjs'
 import { authRouter } from './routes/auth.mjs'
+import { playlistRouter } from './routes/playlist.mjs'
 import { ensureConfigDir } from './lib/settingsStore.mjs'
 import { loadSecretsAtBoot } from './lib/secretKey.mjs'
 import { originGuard } from './lib/originGuard.mjs'
@@ -101,6 +102,7 @@ app.use('/api/download', downloadRouter)
 app.use('/api/queue', queueRouter)
 app.use('/api/events', eventsRouter)
 app.use('/api/library', libraryRouter)
+app.use('/api/playlist', playlistRouter)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const publicDir = path.join(__dirname, 'public')

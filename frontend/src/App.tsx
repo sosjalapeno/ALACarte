@@ -7,6 +7,7 @@ import { SearchPage } from './pages/Search'
 import { LibraryPage } from './pages/Library'
 import { AlbumPage } from './pages/Album'
 import { ArtistPage } from './pages/Artist'
+import { PlaylistPage } from './pages/Playlist'
 import { StatusPage } from './pages/Status'
 import { SettingsPage } from './pages/Settings'
 import { TopBar } from './components/TopBar'
@@ -162,6 +163,7 @@ function AuthedApp() {
               <Route path="/library" element={<PageWrapper><LibraryPage /></PageWrapper>} />
               <Route path="/album/:id" element={<PageWrapper><AlbumPage /></PageWrapper>} />
               <Route path="/artist/:id" element={<PageWrapper><ArtistPage /></PageWrapper>} />
+              <Route path="/playlist/:id" element={<PageWrapper><PlaylistPage /></PageWrapper>} />
               <Route path="/status" element={<PageWrapper><StatusPage /></PageWrapper>} />
               <Route path="/settings" element={<PageWrapper><SettingsPage /></PageWrapper>} />
             </Routes>

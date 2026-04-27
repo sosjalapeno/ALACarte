@@ -34,11 +34,14 @@ export function QueueItem({ job }: Props) {
     } catch {}
   }
 
+  const isPlaylist = job.kind === 'playlist'
+  const playlistHref = job.playlistId ? `/playlist/${job.playlistId}` : null
+
   return (
     <Card hover className="flex items-center gap-3 p-3 md:gap-4">
       <div className="shrink-0 h-14 w-14 md:h-16 md:w-16 overflow-hidden rounded-xl bg-black/50">
         {job.artworkUrl ? (
-          <Link to={`/album/${job.albumId}`} className="block h-full w-full">
+          <Link to={isPlaylist ? playlistHref || '/search' : `/album/${job.albumId}`} className="block h-full w-full">
             <img src={job.artworkUrl} alt="" className="h-full w-full object-cover" />
           </Link>
         ) : null}
@@ -47,16 +50,22 @@ export function QueueItem({ job }: Props) {
         <div className="flex items-center gap-2 min-w-0">
           <StatusIcon className={`h-4 w-4 shrink-0 ${statusColor} ${spin}`} strokeWidth={2} />
           <div className="truncate text-sm font-medium">
-            <ResolvedMediaLink
-              kind="album"
-              artistId={job.artistId}
-              artistName={job.artist}
-              albumId={job.albumId}
-              albumName={job.albumTitle}
-              className="hover:text-accent transition-colors"
-            >
-              {stripYear(job.albumTitle)}
-            </ResolvedMediaLink>
+            {isPlaylist && playlistHref ? (
+              <Link to={playlistHref} className="hover:text-accent transition-colors">
+                {stripYear(job.albumTitle)}
+              </Link>
+            ) : (
+              <ResolvedMediaLink
+                kind="album"
+                artistId={job.artistId}
+                artistName={job.artist}
+                albumId={job.albumId}
+                albumName={job.albumTitle}
+                className="hover:text-accent transition-colors"
+              >
+                {stripYear(job.albumTitle)}
+              </ResolvedMediaLink>
+            )}
           </div>
         </div>
         <div className="truncate text-xs text-white/55 mt-0.5">

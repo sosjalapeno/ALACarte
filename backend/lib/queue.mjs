@@ -6,7 +6,12 @@ import { spawnSync } from 'node:child_process'
 
 import { emitEvent } from './eventBus.mjs'
 import { readSettings, readAppleCreds } from './settingsStore.mjs'
-import { getAlbum, normalizeAlbum } from './appleApi.mjs'
+import {
+  getAlbum,
+  getPlaylist,
+  normalizeAlbum,
+  normalizePlaylist,
+} from './appleApi.mjs'
 import { writeAmdpConfig, spawnAmdp } from './amdpRunner.mjs'
 import {
   convertDirToFlac,
@@ -114,6 +119,7 @@ function jobPublic(j) {
     progress: j.progress,
     albumId: j.albumId,
     songId: j.songId || null,
+    playlistId: j.playlistId || null,
     albumTitle: j.albumTitle,
     artist: j.artist,
     artistId: j.artistId || null,
@@ -213,6 +219,72 @@ export async function enqueueAlbum({ albumId, storefront, quality = 'alac' }) {
     finalDir: null,
     stats: { total: meta?.trackCount || 0, done: 0, failed: 0 },
   }
+  state.jobs.set(id, job)
+  state.queue.push(id)
+  emitEvent('job.created', jobPublic(job))
+  setImmediate(tickQueue)
+  return jobPublic(job)
+}
+
+export async function enqueuePlaylist({ playlistId, storefront, quality = 'alac' }) {
+  if (!playlistId) throw new Error('playlistId required')
+
+  for (const j of state.jobs.values()) {
+    if (
+      j.kind === 'playlist' &&
+      j.playlistId === playlistId &&
+      (j.status === 'queued' || j.status === 'running')
+    ) {
+      return jobPublic(j)
+    }
+  }
+
+  const id = crypto.randomUUID()
+  const settings = await readSettings()
+
+  let meta = null
+  try {
+    const raw = await getPlaylist({
+      storefront: storefront || settings.storefront,
+      id: playlistId,
+      language: settings.language,
+    })
+    meta = normalizePlaylist(raw?.data?.[0])
+  } catch (err) {
+    console.error('playlist metadata lookup failed', err.message)
+  }
+
+  const job = {
+    id,
+    kind: 'playlist',
+    status: 'queued',
+    progress: 0,
+    albumId: '',
+    playlistId,
+    sourceUrl:
+      meta?.url ||
+      `https://music.apple.com/${encodeURIComponent(storefront || settings.storefront || 'us')}/playlist/_/${encodeURIComponent(playlistId)}`,
+    albumTitle: meta?.name || 'Unknown playlist',
+    artist: meta?.curatorName || 'Apple Music',
+    artistId: meta?.curatorId || null,
+    year: null,
+    artworkUrl: meta?.artworkTemplate
+      ? meta.artworkTemplate
+          .replace('{w}', '600')
+          .replace('{h}', '600')
+          .replace('{f}', 'jpg')
+      : null,
+    storefront: storefront || settings.storefront || 'us',
+    quality,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    currentTrack: null,
+    message: 'Queued',
+    error: null,
+    finalDir: null,
+    stats: { total: meta?.trackCount || meta?.tracks?.length || 0, done: 0, failed: 0 },
+  }
+
   state.jobs.set(id, job)
   state.queue.push(id)
   emitEvent('job.created', jobPublic(job))
@@ -352,10 +424,16 @@ async function runJob(job) {
     })
 
     const isSong = job.kind === 'song'
+    const isPlaylist = job.kind === 'playlist'
     const baseUrl = `https://music.apple.com/${encodeURIComponent(job.storefront)}/album/_/${encodeURIComponent(job.albumId)}`
-    const url = isSong
-      ? `${baseUrl}?i=${encodeURIComponent(job.songId)}`
-      : baseUrl
+    const playlistUrl =
+      job.sourceUrl ||
+      `https://music.apple.com/${encodeURIComponent(job.storefront)}/playlist/_/${encodeURIComponent(job.playlistId || '')}`
+    const url = isPlaylist
+      ? playlistUrl
+      : isSong
+        ? `${baseUrl}?i=${encodeURIComponent(job.songId)}`
+        : baseUrl
     const args = []
     if (isSong) args.push('--song')
     if (job.quality === 'atmos') args.push('--atmos')
@@ -408,6 +486,101 @@ async function runJob(job) {
         : 'Finalizing import',
       currentTrack: null,
     })
+
+    if (isPlaylist) {
+      if (progressState.convertEnabled) {
+        applyProgress(job, progressState, {
+          message: 'Converting to FLAC',
+          currentTrack: null,
+        })
+        const conv = await convertDirToFlac(jobStaging, {
+          onProgress: ({ index, total }) => {
+            if (total > 0) {
+              progressState.convertTotal = total
+            }
+            progressState.convertDone = Math.max(
+              progressState.convertDone,
+              Math.min(progressState.convertTotal || index, index),
+            )
+            applyProgress(job, progressState, {
+              message: `Converting to FLAC (${index}/${progressState.convertTotal || total || index})`,
+            })
+          },
+        })
+        job.stats.converted = conv.converted
+        job.stats.flacFailed = conv.failed
+        if (conv.total > 0) {
+          progressState.convertTotal = conv.total
+          progressState.convertDone = Math.max(progressState.convertDone, conv.total)
+        }
+        progressState.convertDone = Math.max(
+          progressState.convertDone,
+          progressState.convertTotal,
+        )
+        applyProgress(job, progressState, {
+          message: 'Converting to FLAC',
+        })
+      }
+
+      progressState.finalizeProgress = Math.max(progressState.finalizeProgress, 0.55)
+      applyProgress(job, progressState, {
+        message: 'Moving into library',
+        currentTrack: null,
+      })
+
+      const importedTracks = await importPlaylistTracks({
+        job,
+        jobStaging,
+        onProgress: ({ done, total }) => {
+          if (total > 0) {
+            progressState.finalizeProgress = Math.max(
+              progressState.finalizeProgress,
+              0.55 + (Math.min(total, done) / total) * 0.35,
+            )
+            applyProgress(job, progressState, {
+              message: `Moving into library (${done}/${total})`,
+              currentTrack: null,
+            })
+          }
+        },
+      })
+      if (importedTracks.length === 0) {
+        throw new Error('no audio files in final folder')
+      }
+      job.stats.done = importedTracks.length
+
+      progressState.finalizeProgress = Math.max(progressState.finalizeProgress, 0.93)
+      applyProgress(job, progressState, {
+        message: 'Writing playlist file',
+        currentTrack: null,
+      })
+      const playlistPath = await writePlaylistM3U({
+        playlistName: job.albumTitle,
+        playlistId: job.playlistId,
+        tracks: importedTracks,
+      })
+
+      try {
+        await fsp.rm(jobStaging, { recursive: true, force: true })
+      } catch {
+        /* ignore */
+      }
+
+      progressState.finalizeProgress = 1
+      applyProgress(job, progressState, {
+        message: 'Finalizing import',
+        currentTrack: null,
+      })
+
+      updateJob(job.id, {
+        status: 'done',
+        progress: 100,
+        message: `Imported ${importedTracks.length} tracks`,
+        finalDir: path.dirname(playlistPath),
+      })
+      await appendHistory(job)
+      return
+    }
 
     const artistDirs = await fsp.readdir(jobStaging, { withFileTypes: true })
     const firstArtist = artistDirs.find((e) => e.isDirectory())
@@ -725,6 +898,180 @@ function detectAmdpRemuxError(output) {
     }
   }
   return null
+}
+
+async function importPlaylistTracks({ job, jobStaging, onProgress }) {
+  const candidates = await collectAudioFiles(jobStaging)
+  const imported = []
+
+  for (let i = 0; i < candidates.length; i++) {
+    const srcPath = candidates[i].path
+    const relParts = path
+      .relative(jobStaging, srcPath)
+      .split(path.sep)
+      .filter(Boolean)
+    const parsed = inferArtistAlbumFromPath(relParts)
+    const tags = await probeAudioTags(srcPath)
+
+    const artistName = tags.artist || parsed.artist || job.artist || 'Unknown Artist'
+    const albumName = tags.album || parsed.album || null
+
+    let destDir
+    let targetName = path.basename(srcPath)
+    if (albumName) {
+      destDir = await computeFinalDir(
+        MUSIC_ROOT,
+        artistName,
+        stripTrailingYear(albumName),
+        null,
+      )
+    } else {
+      const artistDir = await resolveArtistDir(MUSIC_ROOT, artistName)
+      destDir = path.join(MUSIC_ROOT, artistDir, 'Singles')
+      const title = sanitizeSegment(tags.title || path.basename(srcPath, path.extname(srcPath)))
+      targetName = `${title}${path.extname(srcPath)}`
+    }
+    await ensureDir(destDir)
+
+    const destPath = path.join(destDir, targetName)
+    await moveFileSafe(srcPath, destPath)
+    await moveLyricsSidecars(srcPath, destPath)
+    await copyFolderArtIfAny(path.dirname(srcPath), destDir)
+
+    imported.push(destPath)
+    onProgress?.({ done: i + 1, total: candidates.length })
+  }
+
+  return imported
+}
+
+async function collectAudioFiles(root) {
+  const out = []
+  await walk(root)
+  out.sort((a, b) => (a.mtimeMs - b.mtimeMs) || a.path.localeCompare(b.path))
+  return out
+
+  async function walk(dir) {
+    const entries = await fsp.readdir(dir, { withFileTypes: true })
+    for (const entry of entries) {
+      const abs = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        await walk(abs)
+      } else if (/\.(flac|m4a|mp3)$/i.test(entry.name)) {
+        const stat = await fsp.stat(abs).catch(() => null)
+        out.push({ path: abs, mtimeMs: stat?.mtimeMs || 0 })
+      }
+    }
+  }
+}
+
+function inferArtistAlbumFromPath(parts) {
+  if (parts.length >= 3) {
+    return {
+      artist: parts[0],
+      album: parts[1],
+    }
+  }
+  if (parts.length >= 2) {
+    return {
+      artist: parts[0],
+      album: null,
+    }
+  }
+  return { artist: null, album: null }
+}
+
+async function probeAudioTags(filePath) {
+  const result = spawnSync(
+    'ffprobe',
+    [
+      '-v',
+      'error',
+      '-show_entries',
+      'format_tags=artist,album,title',
+      '-of',
+      'json',
+      filePath,
+    ],
+    {
+      encoding: 'utf8',
+      timeout: 5000,
+    },
+  )
+  if (result.status !== 0 || !result.stdout) {
+    return { artist: null, album: null, title: null }
+  }
+  try {
+    const parsed = JSON.parse(result.stdout)
+    const tags = parsed?.format?.tags || {}
+    return {
+      artist: cleanTag(tags.artist),
+      album: cleanTag(tags.album),
+      title: cleanTag(tags.title),
+    }
+  } catch {
+    return { artist: null, album: null, title: null }
+  }
+}
+
+function cleanTag(value) {
+  if (typeof value !== 'string') return null
+  const s = value.trim()
+  return s ? s : null
+}
+
+async function moveLyricsSidecars(srcAudioPath, destAudioPath) {
+  const srcBase = path.basename(srcAudioPath, path.extname(srcAudioPath))
+  const destBase = path.basename(destAudioPath, path.extname(destAudioPath))
+  const srcDir = path.dirname(srcAudioPath)
+  const destDir = path.dirname(destAudioPath)
+  for (const ext of ['.lrc', '.ttml']) {
+    const src = path.join(srcDir, `${srcBase}${ext}`)
+    const has = await fsp
+      .stat(src)
+      .then((s) => s.isFile())
+      .catch(() => false)
+    if (!has) continue
+    const dest = path.join(destDir, `${destBase}${ext}`)
+    await moveFileSafe(src, dest)
+  }
+}
+
+async function copyFolderArtIfAny(srcDir, destDir) {
+  const src = path.join(srcDir, 'folder.jpg')
+  const exists = await fsp
+    .stat(src)
+    .then((s) => s.isFile())
+    .catch(() => false)
+  if (!exists) return
+  const dest = path.join(destDir, 'folder.jpg')
+  const destExists = await fsp
+    .stat(dest)
+    .then((s) => s.isFile())
+    .catch(() => false)
+  if (destExists) return
+  await fsp.copyFile(src, dest).catch(() => {})
+}
+
+async function writePlaylistM3U({ playlistName, playlistId, tracks }) {
+  const playlistsDir = path.join(MUSIC_ROOT, 'Playlists')
+  await ensureDir(playlistsDir)
+  const base = sanitizeSegment(playlistName || 'Playlist')
+  const filePath = path.join(playlistsDir, `${base}.m3u8`)
+
+  const lines = ['#EXTM3U', `#PLAYLIST:${playlistName || 'Playlist'}`]
+  if (playlistId) {
+    lines.push(`#ALACARTE_PLAYLIST_ID:${playlistId}`)
+  }
+  for (const absPath of tracks) {
+    const rel = path
+      .relative(playlistsDir, absPath)
+      .split(path.sep)
+      .join('/')
+    lines.push(rel)
+  }
+  await fsp.writeFile(filePath, `${lines.join('\n')}\n`, { mode: 0o664 })
+  return filePath
 }
 
 async function moveFileSafe(from, to) {

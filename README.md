@@ -10,14 +10,14 @@ Self-hosted Apple Music downloader with a polished web UI.
 
 ALACarte is a browser-based tool that downloads lossless audio from Apple Music, converts it to FLAC, and organizes it into a clean library structure you can point any media server at.
 
-- **Search & Discover:** Full access to the Apple Music catalog (albums, artists, songs).
+- **Search & Discover:** Full access to the Apple Music catalog (albums, artists, songs, playlists).
 - **Lossless & Hi-Res:** Download ALAC streams and auto-convert to FLAC with embedded artwork and metadata.
 - **Lyrics Support:** Fetch embedded lyrics and sidecar `.lrc` files (requires `media-user-token`).
-- **Smart Queuing:** Queue individual tracks, whole albums, or bulk-select entire artist discographies (filtered by LPs/EPs/Singles).
+- **Smart Queuing:** Queue individual tracks, whole albums, playlists, or bulk-select entire artist discographies (filtered by LPs/EPs/Singles).
 - **Library Awareness:** Duplicate prevention visually flags what is already in your library so you don't re-download.
 - **Explicit / clean filtering:** Apple lists explicit and clean masters as separate albums. Pick your preference in Settings (or show both) to keep search results tidy.
 
-Output lands in `/music/<Artist>/<Album>/01. Track.flac` (or `/music/<Artist>/Singles/` for individual songs).
+Output lands in `/music/<Artist>/<Album>/01. Track.flac` (or `/music/<Artist>/Singles/` for individual songs). Playlist downloads are merged into the same artist/album library structure and also emit `/music/Playlists/<Playlist>.m3u8` with relative paths so Jellyfin/Navidrome can import playlist order.
 
 ---
 

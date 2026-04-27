@@ -7,10 +7,12 @@ import {
   UserRound,
   Music2,
   ListChecks,
+  ListMusic,
 } from 'lucide-react'
 
-import { api, artworkUrl, type Album, type Artist, type Song } from '../api/client'
+import { api, artworkUrl, type Album, type Artist, type Song, type Playlist } from '../api/client'
 import { AlbumCard } from '../components/AlbumCard'
+import { PlaylistCard } from '../components/PlaylistCard'
 import { Card } from '../components/Card'
 import { Badge } from '../components/Badge'
 import { Input } from '../components/Input'
@@ -27,12 +29,13 @@ type Results = {
   albums: Album[]
   artists: Artist[]
   songs: Song[]
+  playlists: Playlist[]
 }
 
-const EMPTY: Results = { albums: [], artists: [], songs: [] }
+const EMPTY: Results = { albums: [], artists: [], songs: [], playlists: [] }
 
-type Category = 'albums' | 'artists' | 'songs'
-const ALL_CATS: Category[] = ['albums', 'artists', 'songs']
+type Category = 'albums' | 'artists' | 'songs' | 'playlists'
+const ALL_CATS: Category[] = ['albums', 'artists', 'songs', 'playlists']
 const resultCache = new Map<string, Results>()
 
 function parseCats(param: string | null): Category[] {
@@ -99,7 +102,7 @@ export function SearchPage() {
       try {
         const r = await api.search(trimmed)
         if (!ctl.signal.aborted) {
-          const next = { albums: r.albums, artists: r.artists, songs: r.songs }
+          const next = { albums: r.albums, artists: r.artists, songs: r.songs, playlists: r.playlists ?? [] }
           resultCache.set(trimmed, next)
           setResults(next)
         }
@@ -164,7 +167,7 @@ export function SearchPage() {
           type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Artists, albums, songs…"
+          placeholder="Artists, albums, songs, playlists…"
           className="pl-12 pr-12 text-base"
           autoCapitalize="off"
           autoCorrect="off"
@@ -198,6 +201,7 @@ export function SearchPage() {
             <CatPill label="Albums" icon={Disc3} active={!allCatsSelected && catSet.has('albums')} onClick={() => toggleCat('albums')} count={results.albums.length} />
             <CatPill label="Artists" icon={UserRound} active={!allCatsSelected && catSet.has('artists')} onClick={() => toggleCat('artists')} count={results.artists.length} />
             <CatPill label="Songs" icon={Music2} active={!allCatsSelected && catSet.has('songs')} onClick={() => toggleCat('songs')} count={results.songs.length} />
+            <CatPill label="Playlists" icon={ListMusic} active={!allCatsSelected && catSet.has('playlists')} onClick={() => toggleCat('playlists')} count={results.playlists.length} />
           </div>
 
           {catSet.has('albums') && (
@@ -236,6 +240,18 @@ export function SearchPage() {
                       <SongRow song={s} />
                     </StaggeredItem>
                   ))}
+              </StaggeredList>
+            </Section>
+          )}
+
+          {catSet.has('playlists') && (
+            <Section title={`Playlists${loading ? ' · searching' : ''}`} empty={results.playlists.length === 0 && !loading}>
+              <StaggeredList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
+                {results.playlists.map((p) => (
+                  <StaggeredItem key={p.id}>
+                    <PlaylistCard playlist={p} />
+                  </StaggeredItem>
+                ))}
               </StaggeredList>
             </Section>
           )}

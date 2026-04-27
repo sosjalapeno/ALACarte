@@ -31,6 +31,40 @@ export type Song = {
   artworkTemplate: string | null
 }
 
+export type Playlist = {
+  id: string
+  name: string
+  curatorName: string
+  curatorId?: string | null
+  trackCount?: number
+  artworkTemplate: string | null
+  artworkColor?: string | null
+  url?: string
+  description?: string
+}
+
+export type PlaylistTrack = {
+  id: string
+  name: string
+  trackNumber?: number
+  durationMs?: number
+  artistName: string
+  artistId?: string | null
+  albumName?: string
+  artworkTemplate?: string | null
+  hasLossless?: boolean
+  hasHiRes?: boolean
+  hasAtmos?: boolean
+}
+
+export type PlaylistDetail = Playlist & {
+  hasLossless: boolean
+  hasHiRes: boolean
+  hasAtmos: boolean
+  lastModifiedDate?: string
+  tracks: PlaylistTrack[]
+}
+
 export type AlbumTrack = {
   id: string
   name: string
@@ -57,11 +91,12 @@ export type AlbumDetail = Album & {
 
 export type Job = {
   id: string
-  kind: 'album' | 'song'
+  kind: 'album' | 'song' | 'playlist'
   status: 'queued' | 'running' | 'done' | 'failed'
   progress: number
   albumId: string
   songId?: string | null
+  playlistId?: string | null
   albumTitle: string
   artist: string
   artistId?: string | null
@@ -317,6 +352,7 @@ export const api = {
       albums: Album[]
       artists: Artist[]
       songs: Song[]
+      playlists: Playlist[]
       storefront: string
     }>(`/api/search?${params.toString()}`)
   },
@@ -330,6 +366,10 @@ export const api = {
       albums: Album[]
       storefront: string
     }>(`/api/artist/${encodeURIComponent(id)}`),
+  playlist: (id: string) =>
+    http<{ playlist: PlaylistDetail; storefront: string }>(
+      `/api/playlist/${encodeURIComponent(id)}`,
+    ),
   queue: () => http<{ jobs: Job[] }>('/api/queue'),
   library: () =>
     http<{
@@ -367,6 +407,11 @@ export const api = {
     http<{ job: Job }>('/api/download/song', {
       method: 'POST',
       body: JSON.stringify({ songId, albumId, storefront }),
+    }),
+  enqueuePlaylist: (playlistId: string, storefront?: string, quality = 'alac') =>
+    http<{ job: Job }>('/api/download/playlist', {
+      method: 'POST',
+      body: JSON.stringify({ playlistId, storefront, quality }),
     }),
   cancel: (id: string) =>
     http<{ ok: boolean }>(`/api/download/${encodeURIComponent(id)}`, {
