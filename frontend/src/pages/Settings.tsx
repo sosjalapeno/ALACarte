@@ -45,6 +45,13 @@ const STOREFRONTS = [
   ['tr', 'Turkey'],
 ] as const
 
+const QUALITY_OPTIONS: Array<{ value: PublicSettings['quality']; label: string }> = [
+  { value: 'flac', label: 'Prefer FLAC conversion' },
+  { value: 'alac', label: 'Prefer ALAC' },
+  { value: 'atmos', label: 'Prefer Dolby Atmos' },
+  { value: 'aac', label: 'Prefer AAC' },
+]
+
 export function SettingsPage() {
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [saving, setSaving] = useState(false)
@@ -188,18 +195,22 @@ export function SettingsPage() {
         <StaggeredItem>
           <SettingsCard icon={<FolderOpen className="h-4 w-4" />} title="Library output">
             <div className="space-y-4">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.convertToFlac}
-                  onChange={(e) => update({ convertToFlac: e.target.checked })}
-                  className="mt-0.5 shrink-0 focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent),0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a] disabled:cursor-not-allowed disabled:opacity-60"
-                />
-                <div>
-                  <div className="text-sm font-medium">
-                    Convert ALAC → FLAC after download
-                  </div>
-
+              <label className="flex flex-col gap-1.5 md:flex-row md:items-start md:gap-3">
+                <span className="text-sm text-white/70 md:w-32 md:pt-2">Quality</span>
+                <div className="md:flex-1">
+                  <select
+                    value={settings.quality}
+                    onChange={(e) =>
+                      update({ quality: e.target.value as PublicSettings['quality'] })
+                    }
+                    className="w-full rounded-app border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-white outline-none transition-[border-color,background,box-shadow] duration-[250ms] ease-smooth focus:border-[rgba(var(--accent),0.45)] focus:bg-[rgba(var(--accent),0.04)] focus:shadow-[0_0_0_3px_rgba(var(--accent),0.18)]"
+                  >
+                    {QUALITY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value} className="bg-zinc-900">
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </label>
               <label

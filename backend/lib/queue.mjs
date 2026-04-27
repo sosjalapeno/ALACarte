@@ -32,6 +32,7 @@ const CONFIG_DIR = process.env.AMDL_CONFIG_DIR || '/config'
 const HISTORY_FILE = path.join(CONFIG_DIR, 'history.ndjson')
 const MAX_HISTORY = 500
 const MAX_CONCURRENT = 1
+const QUALITY_VALUES = new Set(['flac', 'alac', 'atmos', 'aac'])
 
 const state = {
   jobs: new Map(), // id -> job
@@ -92,6 +93,16 @@ function applyProgress(job, progressState, patch = {}) {
     ...patch,
     progress: computeProgressPercent(progressState),
   })
+}
+
+function normalizeQuality(value, fallback = 'flac') {
+  return QUALITY_VALUES.has(value) ? value : fallback
+}
+
+function setConversionEnabled(progressState, enabled) {
+  progressState.convertEnabled = Boolean(enabled)
+  progressState.convertTotal = enabled ? Math.max(1, progressState.downloadTotal) : 0
+  progressState.convertDone = 0
 }
 
 export function listJobs() {
@@ -161,7 +172,7 @@ async function appendHistory(j) {
   }
 }
 
-export async function enqueueAlbum({ albumId, storefront, quality = 'alac' }) {
+export async function enqueueAlbum({ albumId, storefront, quality }) {
   for (const j of state.jobs.values()) {
     if (
       j.albumId === albumId &&
@@ -210,7 +221,7 @@ export async function enqueueAlbum({ albumId, storefront, quality = 'alac' }) {
           .replace('{f}', 'jpg')
       : null,
     storefront: storefront || settings.storefront || 'us',
-    quality,
+    quality: normalizeQuality(quality, settings.quality),
     createdAt: Date.now(),
     updatedAt: Date.now(),
     currentTrack: null,
@@ -226,7 +237,7 @@ export async function enqueueAlbum({ albumId, storefront, quality = 'alac' }) {
   return jobPublic(job)
 }
 
-export async function enqueuePlaylist({ playlistId, storefront, quality = 'alac' }) {
+export async function enqueuePlaylist({ playlistId, storefront, quality }) {
   if (!playlistId) throw new Error('playlistId required')
 
   for (const j of state.jobs.values()) {
@@ -275,7 +286,7 @@ export async function enqueuePlaylist({ playlistId, storefront, quality = 'alac'
           .replace('{f}', 'jpg')
       : null,
     storefront: storefront || settings.storefront || 'us',
-    quality,
+    quality: normalizeQuality(quality, settings.quality),
     createdAt: Date.now(),
     updatedAt: Date.now(),
     currentTrack: null,
@@ -352,7 +363,7 @@ export async function enqueueSong({ songId, albumId, storefront }) {
           .replace('{f}', 'jpg')
       : null,
     storefront: storefront || settings.storefront || 'us',
-    quality: 'alac',
+    quality: normalizeQuality(settings.quality),
     createdAt: Date.now(),
     updatedAt: Date.now(),
     currentTrack: null,
@@ -413,8 +424,10 @@ async function runJob(job) {
     await ensureDir(jobStaging)
 
     const settings = await readSettings()
+    const quality = normalizeQuality(job.quality, settings.quality)
+    job.quality = quality
     const progressState = createProgressState(job, {
-      convertEnabled: settings.convertToFlac !== false,
+      convertEnabled: quality === 'flac',
     })
     const creds = await readAppleCreds()
     await writeAmdpConfig({
@@ -434,49 +447,44 @@ async function runJob(job) {
       : isSong
         ? `${baseUrl}?i=${encodeURIComponent(job.songId)}`
         : baseUrl
-    const args = []
-    if (isSong) args.push('--song')
-    if (job.quality === 'atmos') args.push('--atmos')
-    else if (job.quality === 'aac') args.push('--aac')
-    args.push(url)
 
-    const ctl = new AbortController()
-    state.running.set(job.id, ctl)
-
-    applyProgress(job, progressState, {
-      message: 'Downloading from Apple Music',
+    let downloadResult = await runAmdpDownload({
+      job,
+      jobStaging,
+      url,
+      quality,
+      isSong,
+      progressState,
     })
-
-    const { waitExit } = spawnAmdp({
-      args,
-      cwd: jobStaging, // amdp reads ./config.yaml from cwd
-      signal: ctl.signal,
-      onLine: ({ line, which }) => {
-        handleAmdpLine(job, line, which, progressState)
-      },
-    })
-    const { code, stdout, stderr } = await waitExit
-    state.running.delete(job.id)
-
-    const combined = `${stdout}\n${stderr}`
-    if (code !== 0) {
-      throw new Error(
-        `amdp exited ${code}: ${stderr.slice(-400).trim() || 'no stderr'}`,
-      )
+    let combined = `${downloadResult.stdout}\n${downloadResult.stderr}`
+    if (quality === 'atmos' && (await shouldFallbackAtmosToFlac(downloadResult, combined, jobStaging))) {
+      await fsp.rm(jobStaging, { recursive: true, force: true })
+      await ensureDir(jobStaging)
+      await writeAmdpConfig({
+        settings,
+        mediaUserToken: creds.mediaUserToken,
+        stagingRoot: jobStaging,
+      })
+      progressState.downloadDone = 0
+      progressState.downloadPartial = 0
+      progressState.convertDone = 0
+      progressState.finalizeProgress = 0
+      setConversionEnabled(progressState, true)
+      applyProgress(job, progressState, {
+        message: 'Atmos unavailable; downloading FLAC fallback',
+        currentTrack: null,
+      })
+      downloadResult = await runAmdpDownload({
+        job,
+        jobStaging,
+        url,
+        quality: 'flac',
+        isSong,
+        progressState,
+      })
+      combined = `${downloadResult.stdout}\n${downloadResult.stderr}`
     }
-
-    if (/load Config failed/i.test(combined)) {
-      const line =
-        combined
-          .split(/\r?\n/)
-          .find((l) => /load Config failed/i.test(l)) || ''
-      throw new Error(`amdp config error: ${line.trim()}`)
-    }
-
-    const remuxError = detectAmdpRemuxError(combined)
-    if (remuxError) {
-      throw new Error(remuxError)
-    }
+    assertAmdpResult(downloadResult, combined)
 
     progressState.downloadDone = progressState.downloadTotal
     progressState.downloadPartial = 0
@@ -874,6 +882,85 @@ function probeMp4Box() {
   } catch (err) {
     return { ok: false, error: err.message || 'unknown preflight error' }
   }
+}
+
+function buildAmdpArgs({ isSong, quality, url }) {
+  const args = []
+  if (isSong) args.push('--song')
+  if (quality === 'atmos') args.push('--atmos')
+  else if (quality === 'aac') args.push('--aac')
+  args.push(url)
+  return args
+}
+
+async function runAmdpDownload({ job, jobStaging, url, quality, isSong, progressState }) {
+  const ctl = new AbortController()
+  state.running.set(job.id, ctl)
+
+  applyProgress(job, progressState, {
+    message: quality === 'atmos'
+      ? 'Downloading Dolby Atmos from Apple Music'
+      : 'Downloading from Apple Music',
+  })
+
+  try {
+    const { waitExit } = spawnAmdp({
+      args: buildAmdpArgs({ isSong, quality, url }),
+      cwd: jobStaging,
+      signal: ctl.signal,
+      onLine: ({ line, which }) => {
+        handleAmdpLine(job, line, which, progressState)
+      },
+    })
+    return await waitExit
+  } finally {
+    if (state.running.get(job.id) === ctl) {
+      state.running.delete(job.id)
+    }
+  }
+}
+
+function assertAmdpResult(result, combined) {
+  if (result.code !== 0) {
+    throw new Error(
+      `amdp exited ${result.code}: ${result.stderr.slice(-400).trim() || 'no stderr'}`,
+    )
+  }
+
+  if (/load Config failed/i.test(combined)) {
+    const line =
+      combined
+        .split(/\r?\n/)
+        .find((l) => /load Config failed/i.test(l)) || ''
+    throw new Error(`amdp config error: ${line.trim()}`)
+  }
+
+  const remuxError = detectAmdpRemuxError(combined)
+  if (remuxError) {
+    throw new Error(remuxError)
+  }
+}
+
+async function shouldFallbackAtmosToFlac(result, combined, jobStaging) {
+  if (result.code !== 0) {
+    return isAtmosUnavailableOutput(combined)
+  }
+  const files = await collectAudioFiles(jobStaging)
+  return files.length === 0
+}
+
+function isAtmosUnavailableOutput(output) {
+  const lines = String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  return lines.some((line) =>
+    /atmos.*(not available|unavailable|not found|unsupported|missing|no stream|no variant)/i.test(line) ||
+    /(not available|unavailable|not found|unsupported|missing|no stream|no variant).*atmos/i.test(line) ||
+    /spatial.*(not available|unavailable|not found|unsupported|missing|no stream|no variant)/i.test(line) ||
+    /no (dolby )?atmos/i.test(line),
+  )
 }
 
 function detectAmdpRemuxError(output) {

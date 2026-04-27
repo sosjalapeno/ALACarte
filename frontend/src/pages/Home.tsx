@@ -35,17 +35,17 @@ function SkeletonCard() {
 export function HomePage() {
   const { active, recent, loading } = useQueue()
   const recentList = recent.slice(0, 50)
-  const [convertToFlac, setConvertToFlac] = useState<boolean | null>(null)
+  const [quality, setQuality] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     api
       .settings()
       .then((settings) => {
-        if (!cancelled) setConvertToFlac(settings.convertToFlac !== false)
+        if (!cancelled) setQuality(settings.quality)
       })
       .catch(() => {
-        if (!cancelled) setConvertToFlac(null)
+        if (!cancelled) setQuality(null)
       })
 
     return () => {
@@ -54,9 +54,13 @@ export function HomePage() {
   }, [])
 
   const subtitle =
-    convertToFlac === false
+    quality === 'alac'
       ? 'Search, pick an album, and download Apple Lossless (ALAC) straight into your music library.'
-      : 'Search, pick an album, and download lossless FLAC straight into your music library.'
+      : quality === 'atmos'
+        ? 'Search, pick an album, and download Dolby Atmos when available, with FLAC fallback.'
+        : quality === 'aac'
+          ? 'Search, pick an album, and download AAC straight into your music library.'
+          : 'Search, pick an album, and download lossless FLAC straight into your music library.'
 
   return (
     <div className="mx-auto w-full max-w-6xl pt-4 md:pt-6 space-y-8">

@@ -110,6 +110,8 @@ export type Job = {
   stats?: { total?: number; done?: number; failed?: number; converted?: number }
 }
 
+export type QualityPreference = 'flac' | 'alac' | 'atmos' | 'aac'
+
 export type HealthReport = {
   ok: boolean
   wrapper: {
@@ -125,7 +127,7 @@ export type HealthReport = {
 export type PublicSettings = {
   storefront: string
   language: string
-  quality: string
+  quality: QualityPreference
   albumFolderFormat: string
   artistFolderFormat: string
   songFileFormat: string
@@ -398,7 +400,7 @@ export const api = {
       method: 'DELETE',
       body: JSON.stringify({ relPath }),
     }),
-  enqueue: (albumId: string, quality = 'alac') =>
+  enqueue: (albumId: string, quality?: QualityPreference) =>
     http<{ job: Job }>('/api/download', {
       method: 'POST',
       body: JSON.stringify({ albumId, quality }),
@@ -408,7 +410,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ songId, albumId, storefront }),
     }),
-  enqueuePlaylist: (playlistId: string, storefront?: string, quality = 'alac') =>
+  enqueuePlaylist: (playlistId: string, storefront?: string, quality?: QualityPreference) =>
     http<{ job: Job }>('/api/download/playlist', {
       method: 'POST',
       body: JSON.stringify({ playlistId, storefront, quality }),

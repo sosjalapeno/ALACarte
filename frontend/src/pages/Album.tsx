@@ -185,7 +185,7 @@ export function AlbumPage() {
                         ? 'Queued'
                         : existingJob?.status === 'running'
                           ? 'Downloading…'
-                          : 'Download FLAC'}
+                          : 'Download'}
                   </Button>
                 </div>
               </div>

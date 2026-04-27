@@ -12,7 +12,7 @@ const SETTINGS_FILE = path.join(CONFIG_DIR, 'settings.json')
 const DEFAULTS = {
   storefront: 'us',
   language: 'en-US',
-  quality: 'alac',
+  quality: 'flac',
   albumFolderFormat: '{AlbumName} ({ReleaseYear})',
   artistFolderFormat: '{ArtistName}',
   songFileFormat: '{SongNumer}. {SongName}',
@@ -27,6 +27,8 @@ const DEFAULTS = {
   applePassword: null,
   mediaUserToken: null,
 }
+
+const QUALITY_VALUES = new Set(['flac', 'alac', 'atmos', 'aac'])
 
 export async function ensureConfigDir(dir = CONFIG_DIR) {
   await fsp.mkdir(dir, { recursive: true, mode: 0o750 })
@@ -82,21 +84,42 @@ export async function readSettings() {
   try {
     const raw = await fsp.readFile(SETTINGS_FILE, 'utf8')
     const parsed = JSON.parse(raw)
-    return { ...DEFAULTS, ...parsed }
+    return normalizeSettings(parsed)
   } catch {
-    return { ...DEFAULTS }
+    return normalizeSettings({})
   }
 }
 
 export async function writeSettings(patch) {
   const current = await readSettings()
-  const next = { ...current, ...patch }
+  const merged = { ...current, ...patch }
+  if (
+    Object.prototype.hasOwnProperty.call(patch, 'convertToFlac') &&
+    !Object.prototype.hasOwnProperty.call(patch, 'quality')
+  ) {
+    merged.quality = patch.convertToFlac === false ? 'alac' : 'flac'
+  }
+  const next = normalizeSettings(merged)
   await fsp.writeFile(
     SETTINGS_FILE,
     JSON.stringify(next, null, 2),
     { mode: 0o600 },
   )
   return next
+}
+
+function normalizeSettings(parsed) {
+  const hasQuality = QUALITY_VALUES.has(parsed?.quality)
+  const legacyFlacConversion =
+    parsed?.convertToFlac ?? parsed?.flac_conversion ?? DEFAULTS.convertToFlac
+  const legacyQuality = legacyFlacConversion === false ? 'alac' : 'flac'
+  const quality = hasQuality ? parsed.quality : legacyQuality
+  return {
+    ...DEFAULTS,
+    ...parsed,
+    quality,
+    convertToFlac: quality === 'flac',
+  }
 }
 
 function maskEmail(e) {
@@ -115,7 +138,7 @@ export async function readPublicSettings() {
     albumFolderFormat: s.albumFolderFormat,
     artistFolderFormat: s.artistFolderFormat,
     songFileFormat: s.songFileFormat,
-    convertToFlac: s.convertToFlac,
+    convertToFlac: s.quality === 'flac',
     keepAlac: s.keepAlac,
     coverSize: s.coverSize,
     downloadLyrics: Boolean(s.downloadLyrics),
