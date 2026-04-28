@@ -168,7 +168,7 @@ export async function readPublicSettings() {
     navidromeUser: s.navidromeUser,
     hasNavidromeCreds: Boolean(s.navidromeUser && s.navidromePassword),
     autoDownloadsEnabled: Boolean(s.autoDownloadsEnabled),
-    autoDownloadCheckFrequency: s.autoDownloadCheckFrequency || 'daily',
+    autoDownloadCheckFrequency: s.autoDownloadCheckFrequency || 'auto',
   }
 }
 

@@ -40,6 +40,10 @@ const STALL_TIMEOUT_MS = Math.max(
   Number(process.env.AMDL_STALL_TIMEOUT_MS) || 120_000,
 )
 const STALL_TICK_MS = 5_000
+const FIRST_LINE_TIMEOUT_MS = Math.max(
+  5_000,
+  Number(process.env.AMDL_FIRST_LINE_TIMEOUT_MS) || 30_000,
+)
 
 const state = {
   jobs: new Map(), // id -> job
@@ -426,6 +430,16 @@ async function runJob(job) {
         `MP4Box preflight failed: ${mp4box.error}. Rebuild the web image so apple-music-dl can finalize MP4 files.`,
       )
     }
+    const wrapperHealth = await probeWrapperPorts()
+    if (!wrapperHealth.ok) {
+      const failed = wrapperHealth.failedPorts
+        .map((p) => `${p.name}:${p.port}(${p.error})`)
+        .join(', ')
+      const e = new Error(`wrapper not reachable (${failed})`)
+      e.code = 'WRAPPER_DOWN'
+      emitEvent('wrapper.health', { ok: false, failedPorts: wrapperHealth.failedPorts })
+      throw e
+    }
     await ensureDir(STAGING_ROOT)
     const jobStaging = path.join(STAGING_ROOT, job.id)
     await ensureDir(jobStaging)
@@ -727,6 +741,7 @@ async function runJob(job) {
       message: isSong ? 'Imported track' : `Imported ${audioCount} tracks`,
       finalDir,
     })
+    invalidateLibraryCache()
     await appendHistory(job)
     triggerNavidromeScan().catch(console.error)
   } catch (err) {
@@ -961,6 +976,7 @@ async function runAmdpDownload({ job, jobStaging, url, quality, isSong, progress
       onLine: ({ line, which }) => {
         lastLineAt = Date.now()
         lastLine = line
+        firstLineSeen = true
         handleAmdpLine(job, line, which, progressState)
       },
     })

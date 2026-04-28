@@ -1,7 +1,7 @@
 import express from 'express'
 
 import { readSettings } from '../lib/settingsStore.mjs'
-import { loadArtistCatalog } from '../lib/artistCatalog.mjs'
+import { loadArtistCatalogCached } from '../lib/artistCatalogCache.mjs'
 
 export const artistRouter = express.Router()
 
@@ -14,7 +14,7 @@ artistRouter.get('/:id', async (req, res) => {
       req.query.storefront || settings.storefront || 'us',
     )
     const language = settings.language || 'en-US'
-    const catalog = await loadArtistCatalog({
+    const catalog = await loadArtistCatalogCached({
       artistId: id,
       storefront,
       language,

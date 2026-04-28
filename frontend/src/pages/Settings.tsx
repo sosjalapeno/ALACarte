@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-import { api, type PublicSettings } from '../api/client'
+import { api, type EffectiveCheckInterval, type PublicSettings } from '../api/client'
 import { setAppSettingsCache } from '../hooks/useAppSettings'
 import { useEventStream } from '../hooks/useEventStream'
 
@@ -85,9 +85,13 @@ const AUTO_DOWNLOAD_FREQUENCY_OPTIONS: Array<{
   value: PublicSettings['autoDownloadCheckFrequency']
   label: string
 }> = [
+  { value: 'auto', label: 'Auto (recommended)' },
+  { value: '1h', label: 'Every hour' },
+  { value: '6h', label: 'Every 6 hours' },
   { value: '12h', label: 'Every 12 hours' },
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
+  { value: 'manual', label: 'Manual only' },
 ]
 
 export function SettingsPage() {
@@ -369,6 +373,9 @@ export function SettingsPage() {
                       </option>
                     ))}
                   </select>
+                  <EffectiveIntervalHint
+                    mode={settings.autoDownloadCheckFrequency}
+                  />
                 </div>
               </label>
             </div>
@@ -402,6 +409,48 @@ export function SettingsPage() {
         </StaggeredItem>
       </StaggeredList>
     </>
+  )
+}
+
+function EffectiveIntervalHint({
+  mode,
+}: {
+  mode: PublicSettings['autoDownloadCheckFrequency']
+}) {
+  const [data, setData] = useState<EffectiveCheckInterval | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    api
+      .effectiveCheckInterval()
+      .then((r) => {
+        if (!cancelled) setData(r)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [mode])
+  if (!data) return null
+  if (mode === 'manual') {
+    return (
+      <p className="mt-2 text-xs text-white/45">
+        Auto checks disabled. Use the Check now button on the Following page.
+      </p>
+    )
+  }
+  if (mode === 'auto') {
+    return (
+      <p className="mt-2 text-xs text-white/45">
+        Currently ≈ every {data.label} for {data.followedCount} followed artist
+        {data.followedCount === 1 ? '' : 's'}. Adjusts automatically to keep Apple
+        Music API calls under the daily safety budget.
+      </p>
+    )
+  }
+  return (
+    <p className="mt-2 text-xs text-white/45">
+      Each artist is checked at most once every {data.label}.
+    </p>
   )
 }
 

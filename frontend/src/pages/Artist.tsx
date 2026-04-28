@@ -12,6 +12,7 @@ import { Button } from '../components/Button'
 import { Modal } from '../components/Modal'
 import { StaggeredList, StaggeredItem } from '../components/StaggeredList'
 import { useLibraryPresence } from '../hooks/useLibraryPresence'
+import { useActivityFeed } from '../hooks/useActivityFeed'
 
 export function ArtistPage() {
   const { id } = useParams<{ id: string }>()
@@ -25,6 +26,15 @@ export function ArtistPage() {
   const [queuedCount, setQueuedCount] = useState(0)
   const [followBanner, setFollowBanner] = useState(false)
   const { isAlbumInLibrary } = useLibraryPresence()
+  const { followingState } = useActivityFeed()
+
+  useEffect(() => {
+    if (!id) return
+    const evt = followingState[id]
+    if (!evt) return
+    if (evt.unfollowed) setFollowing(false)
+    else if (evt.totalReleaseCount !== undefined) setFollowing(true)
+  }, [id, followingState])
 
   useEffect(() => {
     if (!queuedCount) return

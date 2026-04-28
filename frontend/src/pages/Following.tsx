@@ -1,17 +1,17 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CheckCircle2, Clock, RefreshCw, UserRoundCheck, X, Loader2 } from 'lucide-react'
+import { CheckCircle2, Clock, RefreshCw, UserRoundCheck, X, Loader2, Download } from 'lucide-react'
 
 import { api, artworkUrl, type FollowedArtist, type Job } from '../api/client'
 import { Badge } from '../components/Badge'
 import { Button } from '../components/Button'
 import { Card } from '../components/Card'
 import { StaggeredItem, StaggeredList } from '../components/StaggeredList'
-import { useActivityFeed } from '../hooks/useActivityFeed'
+import { useActivityFeed, type FollowingArtistState } from '../hooks/useActivityFeed'
 
 export function FollowingPage() {
-  const { jobs } = useActivityFeed()
+  const { jobs, followingState } = useActivityFeed()
   const [artists, setArtists] = useState<FollowedArtist[]>([])
   const [loading, setLoading] = useState(true)
   const [checking, setChecking] = useState(false)
@@ -90,7 +90,7 @@ export function FollowingPage() {
         )}
       </AnimatePresence>
 
-      <section className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <section className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
           <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
             Followed artists
@@ -99,33 +99,46 @@ export function FollowingPage() {
             Follow artists once and ALACarte will keep an eye out for future releases.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={runCheck} disabled={checking || loading}>
+        <div
+          className="flex w-full flex-wrap items-center justify-start gap-2 md:w-auto md:justify-end"
+          aria-busy={activeJobsTotal > 0}
+        >
+          <Button
+            onClick={runCheck}
+            disabled={checking || loading}
+            className="whitespace-nowrap"
+          >
             <RefreshCw className={checking ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
             {checking ? 'Checking…' : 'Check now'}
           </Button>
-          <motion.button
-            layout
-            type="button"
+          <Button
             disabled={checking || loading || activeJobsTotal > 0}
-            className={`inline-flex h-9 items-center justify-center gap-2 overflow-hidden rounded-full px-4 text-sm font-medium transition-[background-color,border-color,color] duration-300 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent),0.5)] focus-visible:ring-offset-2 ${
-              activeJobsTotal > 0
-                ? "border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.08)] text-[rgb(var(--accent))]"
-                : "border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--accent),0.12)] text-white hover:bg-[rgba(var(--accent),0.2)] disabled:opacity-50"
-            }`}
             onClick={() => {
-              api.downloadMissingReleases().then((res) => { setQueuedCount(res.queued) }).catch((err: any) => setError(err.message || 'Failed to download missing releases'))
+              api
+                .downloadMissingReleases()
+                .then((res) => setQueuedCount(res.queued))
+                .catch((err: any) =>
+                  setError(err.message || 'Failed to download missing releases'),
+                )
             }}
+            className={
+              activeJobsTotal > 0
+                ? 'whitespace-nowrap border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.14)] text-[rgb(var(--accent))]'
+                : 'whitespace-nowrap'
+            }
           >
             {activeJobsTotal > 0 ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <motion.span layout="position">Downloading...</motion.span>
+                Downloading…
               </>
             ) : (
-              <motion.span layout="position">Download all previous discography</motion.span>
+              <>
+                <Download className="h-4 w-4" />
+                Download discographies
+              </>
             )}
-          </motion.button>
+          </Button>
         </div>
       </section>
 
@@ -160,6 +173,7 @@ export function FollowingPage() {
                 <ArtistFollowCard
                   artist={artist}
                   jobs={jobs}
+                  liveState={followingState[artist.id]}
                   onUnfollow={() => unfollow(artist.id)}
                 />
               </StaggeredItem>
@@ -174,14 +188,14 @@ export function FollowingPage() {
 function ArtistFollowCard({
   artist,
   jobs,
+  liveState,
   onUnfollow,
 }: {
   artist: FollowedArtist
   jobs: Job[]
+  liveState?: FollowingArtistState
   onUnfollow: () => void
 }) {
-  const [initialDone] = useState(() => new Set(jobs.filter((j) => j.status === 'done').map((j) => j.id)))
-
   const artistJobs = useMemo(() => {
     const map = new Map<string, Job>()
     for (const j of jobs) {
@@ -194,13 +208,18 @@ function ArtistFollowCard({
 
   const activeJobs = artistJobs.filter((j) => j.status === 'queued' || j.status === 'running')
   const finishedJobs = artistJobs.filter((j) => j.status === 'done' || j.status === 'failed')
-  const sessionDoneJobsCount = artistJobs.filter((j) => j.status === 'done' && !initialDone.has(j.id)).length
   const totalJobs = activeJobs.length + finishedJobs.length
   const isDownloading = activeJobs.length > 0
   const progressPercent = totalJobs > 0 ? (finishedJobs.length / totalJobs) * 100 : 0
 
-  const displayMissingCount = Math.max(0, artist.missingReleaseCount - sessionDoneJobsCount)
-  const isFullyDownloaded = artist.totalReleaseCount > 0 && displayMissingCount === 0
+  const displayMissingCount = Math.max(
+    0,
+    typeof liveState?.missingReleaseCount === 'number'
+      ? liveState.missingReleaseCount
+      : artist.missingReleaseCount,
+  )
+  const totalCount = liveState?.totalReleaseCount ?? artist.totalReleaseCount
+  const isFullyDownloaded = totalCount > 0 && displayMissingCount === 0
 
   const art = artworkUrl(artist.artworkTemplate, 300)
   return (
@@ -239,22 +258,27 @@ function ArtistFollowCard({
                     {displayMissingCount} missing
                   </Badge>
                 )}
-                <Badge>{artist.totalReleaseCount} releases</Badge>
+                <Badge>{totalCount} releases</Badge>
               </div>
             </div>
           </div>
 
-          <div className="mt-auto flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-auto flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0 text-xs text-white/45">
               <div className="flex items-center gap-1.5">
                 <Clock className="h-3.5 w-3.5" />
                 {artist.lastCheckedAt ? `Checked ${formatRelativeTime(artist.lastCheckedAt)}` : 'Waiting for first check'}
               </div>
               {artist.latestReleaseDate && (
-                <div className="mt-1 truncate">Latest release {artist.latestReleaseDate}</div>
+                <div
+                  className="mt-1 truncate"
+                  title={`Latest release ${artist.latestReleaseDate}`}
+                >
+                  Latest release {artist.latestReleaseDate}
+                </div>
               )}
             </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <div className="flex flex-wrap items-center justify-start gap-2 lg:shrink-0 lg:justify-end">
               {isDownloading ? (
                 <div className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.08)] px-3 text-xs font-medium text-[rgb(var(--accent))]">
                   <div className="w-16">

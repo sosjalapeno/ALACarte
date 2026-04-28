@@ -1,8 +1,8 @@
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 
-import { loadArtistCatalog } from './artistCatalog.mjs'
-import { hasAlbumInLibrary, scanLibraryOnce } from './libraryIndex.mjs'
+import { loadArtistCatalogCached, invalidateArtistCatalog } from './artistCatalogCache.mjs'
+import { invalidateLibraryCache, makeAlbumKey, scanLibraryOnce, stripTrailingYear } from './libraryIndex.mjs'
 import { readSettings } from './settingsStore.mjs'
 import { onEvent as subscribeEvent, emitEvent } from './eventBus.mjs'
 
@@ -48,12 +48,15 @@ export async function followArtist({ artistId, downloadNow = false }) {
   const settings = await readSettings()
   const storefront = settings.storefront || 'us'
   const language = settings.language || 'en-US'
-  const catalog = await loadArtistCatalog({
-    artistId,
-    storefront,
-    language,
-    explicitFilter: settings.explicitFilter || 'explicit',
-  })
+  const catalog = await loadArtistCatalogCached(
+    {
+      artistId,
+      storefront,
+      language,
+      explicitFilter: settings.explicitFilter || 'explicit',
+    },
+    { force: true },
+  )
   if (!catalog?.artist) {
     const err = new Error('artist not found')
     err.statusCode = 404
@@ -78,7 +81,8 @@ export async function followArtist({ artistId, downloadNow = false }) {
   let missingCount = 0
   for (const album of catalog.albums) {
     if (!album.artistName || !album.name) continue
-    if (!(await hasAlbumInLibrary(album.artistName, album.name, libIndex))) {
+    const key = makeAlbumKey(album.artistName, stripTrailingYear(album.name))
+    if (!key || !libIndex.albumKeys.has(key)) {
       missingCount++
     }
   }
@@ -102,7 +106,7 @@ export async function followArtist({ artistId, downloadNow = false }) {
     storefront,
     knownReleaseIds,
     latestReleaseDate,
-    lastCheckedAt: now,
+    lastCheckedAt: previous?.lastCheckedAt || now,
     followedAt: previous?.followedAt || now,
     updatedAt: now,
     totalReleaseCount: catalog.albums.length,
@@ -110,6 +114,12 @@ export async function followArtist({ artistId, downloadNow = false }) {
   })
 
   await writeFollowingStore(store)
+  emitEvent('following.updated', {
+    artistId,
+    missingReleaseCount: missingCount,
+    totalReleaseCount: catalog.albums.length,
+    followed: true,
+  })
   return {
     artist: projectArtist(store.artists[artistId]),
     albums: catalog.albums,
@@ -121,6 +131,10 @@ export async function unfollowArtist(id) {
   const existed = Boolean(store.artists[id])
   delete store.artists[id]
   await writeFollowingStore(store)
+  if (existed) {
+    invalidateArtistCatalog(id)
+    emitEvent('following.updated', { artistId: id, followed: false })
+  }
   return { ok: true, existed }
 }
 
@@ -189,12 +203,18 @@ subscribeEvent(async (evt) => {
   const job = evt.data
   if (!job || job.status !== 'done' || job.kind !== 'album' || !job.artistId) return
   try {
+    invalidateLibraryCache()
     const store = await readFollowingStore()
     const artist = store.artists[job.artistId]
     if (artist && artist.missingReleaseCount > 0) {
       const newCount = Math.max(0, artist.missingReleaseCount - 1)
       await updateFollowedArtist(job.artistId, { missingReleaseCount: newCount })
-      emitEvent('following.updated', { artistId: job.artistId, missingReleaseCount: newCount })
+      emitEvent('following.updated', {
+        artistId: job.artistId,
+        missingReleaseCount: newCount,
+        totalReleaseCount: artist.totalReleaseCount,
+        albumId: job.albumId,
+      })
     }
   } catch (err) {
     console.error('Failed to decrement missingReleaseCount for job', job.id, err)

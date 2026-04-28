@@ -14,6 +14,17 @@ export function HealthPill({ health, loading, variant = 'default' }: Props) {
     return <Badge className={shellClass}>Checking…</Badge>
   }
   if (health.ok) {
+    if (health.wrapper?.stallRecent) {
+      return (
+        <Badge
+          variant="warn"
+          className={shellClass}
+          title="The download wrapper recently stalled and was auto-recovered. The queue is moving normally."
+        >
+          ● Recovered
+        </Badge>
+      )
+    }
     return <Badge variant="ok" className={shellClass}>● Ready</Badge>
   }
   const wrapperDown =

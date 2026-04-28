@@ -1,37 +1,24 @@
 import express from 'express'
-import net from 'node:net'
 import fs from 'node:fs'
 import { spawn } from 'node:child_process'
 
 import { getBearerToken } from '../lib/appleToken.mjs'
+import {
+  getWrapperEventState,
+  getWrapperPorts,
+  probeTcp,
+} from '../lib/wrapperHealth.mjs'
 
 export const healthRouter = express.Router()
 
-const WRAPPER_HOST = process.env.AMDL_WRAPPER_HOST || '127.0.0.1'
+const _ports = getWrapperPorts()
+const WRAPPER_HOST = _ports.host
 const WRAPPER_PORTS = {
-  decrypt: Number(process.env.AMDL_WRAPPER_DECRYPT_PORT || 10020),
-  m3u8: Number(process.env.AMDL_WRAPPER_M3U8_PORT || 20020),
-  account: Number(process.env.AMDL_WRAPPER_ACCOUNT_PORT || 30020),
+  decrypt: _ports.decrypt,
+  m3u8: _ports.m3u8,
+  account: _ports.account,
 }
 const MUSIC_PATH = process.env.AMDL_MUSIC_PATH || '/music'
-
-function probeTcp(host, port, timeout = 1500) {
-  return new Promise((resolve) => {
-    const socket = new net.Socket()
-    let settled = false
-    const finish = (ok, err) => {
-      if (settled) return
-      settled = true
-      socket.destroy()
-      resolve({ ok, error: err || null })
-    }
-    socket.setTimeout(timeout)
-    socket.once('connect', () => finish(true))
-    socket.once('timeout', () => finish(false, 'timeout'))
-    socket.once('error', (e) => finish(false, e.code || e.message))
-    socket.connect(port, host)
-  })
-}
 
 function humanize(probe) {
   if (probe.ok) return probe
@@ -61,11 +48,19 @@ healthRouter.get('/', async (_req, res) => {
   }
   const musicWritable = await checkWritable(MUSIC_PATH)
   const wrapperUp = decrypt.ok && m3u8.ok && account.ok
+  const events = getWrapperEventState()
+  const recentStallMs = 5 * 60_000
+  const stallRecent =
+    events.stallSuspectedAt && Date.now() - events.stallSuspectedAt < recentStallMs
   res.json({
     ok: wrapperUp && tokenOk && musicWritable.ok && mp4box.ok,
     wrapper: {
       host: WRAPPER_HOST,
       up: wrapperUp,
+      stallRecent: Boolean(stallRecent),
+      lastStallAt: events.stallSuspectedAt || null,
+      lastStallAbortedAt: events.stallAbortedAt || null,
+      lastDownAt: events.downAt || null,
       decrypt: humanize(decrypt),
       m3u8: humanize(m3u8),
       account: humanize(account),

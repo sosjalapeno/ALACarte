@@ -118,6 +118,11 @@ export type HealthReport = {
   ok: boolean
   wrapper: {
     host: string
+    up?: boolean
+    stallRecent?: boolean
+    lastStallAt?: number | null
+    lastStallAbortedAt?: number | null
+    lastDownAt?: number | null
     decrypt: { ok: boolean; error: string | null }
     m3u8: { ok: boolean; error: string | null }
     account: { ok: boolean; error: string | null }
@@ -149,7 +154,23 @@ export type PublicSettings = {
   navidromeUser: string | null
   hasNavidromeCreds: boolean
   autoDownloadsEnabled: boolean
-  autoDownloadCheckFrequency: '12h' | 'daily' | 'weekly'
+  autoDownloadCheckFrequency: AutoCheckFrequency
+}
+
+export type AutoCheckFrequency =
+  | 'auto'
+  | '1h'
+  | '6h'
+  | '12h'
+  | 'daily'
+  | 'weekly'
+  | 'manual'
+
+export type EffectiveCheckInterval = {
+  mode: AutoCheckFrequency
+  followedCount: number
+  ms: number | null
+  label: string
 }
 
 export type FollowedArtist = Artist & {
@@ -427,6 +448,8 @@ export const api = {
     http<{ ok: boolean; queued: number }>(`/api/following/${encodeURIComponent(id)}/download-missing`, {
       method: 'POST',
     }),
+  effectiveCheckInterval: () =>
+    http<EffectiveCheckInterval>('/api/following/check/effective-interval'),
   queue: () => http<{ jobs: Job[] }>('/api/queue'),
   library: () =>
     http<{

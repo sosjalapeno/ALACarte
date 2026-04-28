@@ -75,6 +75,21 @@ type WrapperStallEvent = {
   phase?: 'warning' | 'aborting'
 }
 
+type FollowingUpdatedEvent = {
+  artistId?: string
+  missingReleaseCount?: number
+  totalReleaseCount?: number
+  followed?: boolean
+  albumId?: string
+}
+
+export type FollowingArtistState = {
+  missingReleaseCount: number
+  totalReleaseCount?: number
+  unfollowed?: boolean
+  updatedAt: number
+}
+
 const MAX_FEED_ITEMS = 120
 const MAX_TERMINAL_LINES = 600
 
@@ -84,6 +99,7 @@ export function useActivityFeed() {
   const [terminalLines, setTerminalLines] = useState<ActivityTerminalLine[]>([])
   const [loading, setLoading] = useState(true)
   const [streamStatus, setStreamStatus] = useState<EventStreamStatus>('connecting')
+  const [followingState, setFollowingState] = useState<Record<string, FollowingArtistState>>({})
   const sequenceRef = useRef(0)
   const jobFeedSignatureRef = useRef(new Map<string, string>())
   const wrapperPhaseRef = useRef('')
@@ -259,6 +275,27 @@ export function useActivityFeed() {
         return
       }
 
+      if (type === 'following.updated') {
+        const event = data as FollowingUpdatedEvent
+        if (!event.artistId) return
+        setFollowingState((prev) => ({
+          ...prev,
+          [event.artistId as string]: {
+            missingReleaseCount:
+              typeof event.missingReleaseCount === 'number'
+                ? event.missingReleaseCount
+                : prev[event.artistId as string]?.missingReleaseCount ?? 0,
+            totalReleaseCount:
+              typeof event.totalReleaseCount === 'number'
+                ? event.totalReleaseCount
+                : prev[event.artistId as string]?.totalReleaseCount,
+            unfollowed: event.followed === false ? true : false,
+            updatedAt: now,
+          },
+        }))
+        return
+      }
+
       if (type === 'wrapper.stall.suspected') {
         const event = data as WrapperStallEvent
         const idleSec = Math.round((event.idleMs || 0) / 1000)
@@ -326,6 +363,7 @@ export function useActivityFeed() {
     activeJobs,
     recentFailures,
     latestEventAt,
+    followingState,
   }
 }
 

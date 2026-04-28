@@ -1,17 +1,13 @@
 import { emitEvent } from './eventBus.mjs'
-import { loadArtistCatalog } from './artistCatalog.mjs'
-import { hasAlbumInLibrary, scanLibraryOnce } from './libraryIndex.mjs'
+import { loadArtistCatalogCached } from './artistCatalogCache.mjs'
+import { resolveIntervalMs } from './checkInterval.mjs'
+import { makeAlbumKey, scanLibraryOnce, stripTrailingYear } from './libraryIndex.mjs'
 import { enqueueAlbum } from './queue.mjs'
 import { readSettings } from './settingsStore.mjs'
 import { readFollowingStore, updateFollowedArtist } from './followedArtistsStore.mjs'
 
-const FREQUENCY_MS = {
-  '12h': 12 * 60 * 60 * 1000,
-  daily: 24 * 60 * 60 * 1000,
-  weekly: 7 * 24 * 60 * 60 * 1000,
-}
-
-const SCHEDULER_TICK_MS = 5 * 60 * 1000
+const SCHEDULER_TICK_MS = Math.max(60_000, Number(process.env.AMDL_FOLLOW_TICK_MS) || 5 * 60 * 1000)
+const MAX_PER_TICK = Math.max(1, Number(process.env.AMDL_FOLLOW_MAX_PER_TICK) || 6)
 
 let timer = null
 let running = false
@@ -43,19 +39,29 @@ export async function runAutoDownloadCheck({ reason = 'manual', force = false } 
       return { ok: true, skipped: true, reason: 'disabled' }
     }
 
-    const intervalMs = FREQUENCY_MS[settings.autoDownloadCheckFrequency] || FREQUENCY_MS.daily
     const store = await readFollowingStore()
     const artists = Object.values(store.artists)
+    const followedCount = artists.length
+    const intervalMs = resolveIntervalMs(settings.autoDownloadCheckFrequency, followedCount)
     const now = Date.now()
-    const dueArtists = artists.filter(
-      (artist) => force || !artist.lastCheckedAt || now - artist.lastCheckedAt >= intervalMs,
-    )
+    const dueArtistsAll = artists
+      .filter(
+        (artist) =>
+          force ||
+          !artist.lastCheckedAt ||
+          now - artist.lastCheckedAt >= intervalMs,
+      )
+      .sort((a, b) => (a.lastCheckedAt || 0) - (b.lastCheckedAt || 0))
+    const dueArtists = force
+      ? dueArtistsAll
+      : dueArtistsAll.slice(0, MAX_PER_TICK)
 
     emitEvent('following.check', {
       phase: 'started',
       reason,
       artists: dueArtists.length,
       totalArtists: artists.length,
+      deferred: Math.max(0, dueArtistsAll.length - dueArtists.length),
     })
 
     const libIndex = await scanLibraryOnce()
@@ -63,7 +69,7 @@ export async function runAutoDownloadCheck({ reason = 'manual', force = false } 
     let queued = 0
     let discovered = 0
     for (const artist of dueArtists) {
-      const result = await checkFollowedArtist(artist, settings, libIndex)
+      const result = await checkFollowedArtist(artist, settings, libIndex, followedCount)
       queued += result.queued
       discovered += result.discovered
     }
@@ -82,19 +88,22 @@ export async function runAutoDownloadCheck({ reason = 'manual', force = false } 
   }
 }
 
-async function checkFollowedArtist(artist, settings, libIndex) {
+async function checkFollowedArtist(artist, settings, libIndex, followedCount) {
   emitEvent('following.check', {
     phase: 'artist-started',
     artistId: artist.id,
     artistName: artist.name,
   })
 
-  const catalog = await loadArtistCatalog({
-    artistId: artist.id,
-    storefront: artist.storefront || settings.storefront || 'us',
-    language: settings.language || 'en-US',
-    explicitFilter: settings.explicitFilter || 'explicit',
-  })
+  const catalog = await loadArtistCatalogCached(
+    {
+      artistId: artist.id,
+      storefront: artist.storefront || settings.storefront || 'us',
+      language: settings.language || 'en-US',
+      explicitFilter: settings.explicitFilter || 'explicit',
+    },
+    { followedCount },
+  )
   const albums = catalog?.albums || []
   const known = new Set(artist.knownReleaseIds || [])
   const newAlbums = albums.filter((album) => album.id && !known.has(album.id))
@@ -109,7 +118,9 @@ async function checkFollowedArtist(artist, settings, libIndex) {
     if (
       album.artistName &&
       album.name &&
-      (await hasAlbumInLibrary(album.artistName, album.name, libIndex))
+      libIndex.albumKeys.has(
+        makeAlbumKey(album.artistName, stripTrailingYear(album.name)),
+      )
     ) {
       successfulIds.add(album.id)
       continue
@@ -148,7 +159,8 @@ async function checkFollowedArtist(artist, settings, libIndex) {
   let missingCount = 0
   for (const album of albums) {
     if (!album.artistName || !album.name) continue
-    if (!(await hasAlbumInLibrary(album.artistName, album.name, libIndex))) {
+    const key = makeAlbumKey(album.artistName, stripTrailingYear(album.name))
+    if (!key || !libIndex.albumKeys.has(key)) {
       missingCount++
     }
   }
