@@ -10,6 +10,7 @@ import { ArtistPage } from './pages/Artist'
 import { PlaylistPage } from './pages/Playlist'
 import { StatusPage } from './pages/Status'
 import { SettingsPage } from './pages/Settings'
+import { FollowingPage } from './pages/Following'
 import { TopBar } from './components/TopBar'
 import { HealthPill } from './components/HealthPill'
 import { PageWrapper } from './components/PageWrapper'
@@ -161,6 +162,7 @@ function AuthedApp() {
               <Route path="/" element={<PageWrapper><HomePage /></PageWrapper>} />
               <Route path="/search" element={<PageWrapper><SearchPage /></PageWrapper>} />
               <Route path="/library" element={<PageWrapper><LibraryPage /></PageWrapper>} />
+              <Route path="/following" element={<PageWrapper><FollowingPage /></PageWrapper>} />
               <Route path="/album/:id" element={<PageWrapper><AlbumPage /></PageWrapper>} />
               <Route path="/artist/:id" element={<PageWrapper><ArtistPage /></PageWrapper>} />
               <Route path="/playlist/:id" element={<PageWrapper><PlaylistPage /></PageWrapper>} />

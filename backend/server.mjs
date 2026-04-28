@@ -16,12 +16,14 @@ import { eventsRouter } from './routes/events.mjs'
 import { libraryRouter } from './routes/library.mjs'
 import { authRouter } from './routes/auth.mjs'
 import { playlistRouter } from './routes/playlist.mjs'
+import { followingRouter } from './routes/following.mjs'
 import { ensureConfigDir } from './lib/settingsStore.mjs'
 import { loadSecretsAtBoot } from './lib/secretKey.mjs'
 import { originGuard } from './lib/originGuard.mjs'
 import { isPasswordSet } from './lib/authStore.mjs'
 import { generateSetupToken } from './lib/setupToken.mjs'
 import { isAuthDisabled, requireAuth } from './lib/requireAuth.mjs'
+import { startAutoDownloadScheduler } from './lib/autoDownloads.mjs'
 
 const PORT = Number(process.env.PORT || 7373)
 const CONFIG_DIR = process.env.AMDL_CONFIG_DIR || '/config'
@@ -103,6 +105,9 @@ app.use('/api/queue', queueRouter)
 app.use('/api/events', eventsRouter)
 app.use('/api/library', libraryRouter)
 app.use('/api/playlist', playlistRouter)
+app.use('/api/following', followingRouter)
+
+startAutoDownloadScheduler()
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const publicDir = path.join(__dirname, 'public')

@@ -7,6 +7,7 @@ import {
   Home as HomeIcon,
   Search as SearchIcon,
   Library as LibraryIcon,
+  UserRoundCheck,
   LogOut,
   Settings2,
 } from 'lucide-react'
@@ -110,6 +111,7 @@ export function NavDrawer({ open, onClose }: Props) {
             </div>
             <DrawerRow to="/search" icon={SearchIcon} label="Search" />
             <DrawerRow to="/library" icon={LibraryIcon} label="Library" />
+            <DrawerRow to="/following" icon={UserRoundCheck} label="Following" />
 
             <div className="mb-1 mt-4 px-3 text-[0.6875rem] font-semibold uppercase tracking-[0.08em] text-white/40">
               System

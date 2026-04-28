@@ -36,12 +36,15 @@ const WRITABLE_KEYS = new Set([
   'navidromeUrl',
   'navidromeUser',
   'navidromePassword',
+  'autoDownloadsEnabled',
+  'autoDownloadCheckFrequency',
 ])
 
 const EXPLICIT_FILTER_VALUES = new Set(['explicit', 'clean', 'both'])
 const LYRICS_FORMAT_VALUES = new Set(['lrc', 'ttml'])
 const LYRICS_TYPE_VALUES = new Set(['lyrics', 'lyrics-with-translation'])
 const QUALITY_VALUES = new Set(['flac', 'alac', 'atmos', 'aac'])
+const AUTO_DOWNLOAD_FREQUENCY_VALUES = new Set(['12h', 'daily', 'weekly'])
 
 settingsRouter.get('/', async (_req, res) => {
   try {
@@ -62,6 +65,7 @@ settingsRouter.put('/', async (req, res) => {
       if (k === 'lyricsFormat' && !LYRICS_FORMAT_VALUES.has(v)) continue
       if (k === 'lyricsType' && !LYRICS_TYPE_VALUES.has(v)) continue
       if (k === 'quality' && !QUALITY_VALUES.has(v)) continue
+      if (k === 'autoDownloadCheckFrequency' && !AUTO_DOWNLOAD_FREQUENCY_VALUES.has(v)) continue
       if (k === 'navidromePassword') {
         if (v) {
           patch[k] = encryptSecret(v)

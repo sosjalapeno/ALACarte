@@ -24,10 +24,11 @@ export function TopBar({ health, loading }: Props) {
   const isArtist = location.pathname.startsWith('/artist/')
   const isAlbum = location.pathname.startsWith('/album/')
   const isPlaylist = location.pathname.startsWith('/playlist/')
+  const isFollowing = location.pathname === '/following'
   const isStatus = location.pathname === '/status'
   const isSettings = location.pathname === '/settings'
   const showHomeShortcut =
-    isSearch || isArtist || isStatus || isSettings || isAlbum || isPlaylist
+    isSearch || isArtist || isStatus || isSettings || isAlbum || isPlaylist || isFollowing
   const showCenterPill =
     location.pathname === '/' || location.pathname === '/library'
   const pageTitle =
@@ -35,13 +36,15 @@ export function TopBar({ health, loading }: Props) {
       ? 'Search'
       : location.pathname === '/status'
         ? 'Status'
-      : location.pathname === '/settings'
-        ? 'Settings'
-        : location.pathname.startsWith('/album/')
-          ? 'Album'
-          : location.pathname.startsWith('/artist/')
-            ? 'Artist'
-            : ''
+        : location.pathname === '/settings'
+          ? 'Settings'
+          : location.pathname === '/following'
+            ? 'Following'
+            : location.pathname.startsWith('/album/')
+              ? 'Album'
+              : location.pathname.startsWith('/artist/')
+                ? 'Artist'
+                : ''
 
   const iconBtn =
     'inline-flex h-10 w-10 items-center justify-center rounded-full border-0 bg-transparent text-white/60 transition-[background,color,transform] duration-[180ms] ease-smooth hover:bg-[rgba(var(--accent),0.12)] hover:text-[rgb(var(--accent))] active:scale-95 disabled:pointer-events-none disabled:opacity-40'

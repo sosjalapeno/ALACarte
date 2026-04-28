@@ -47,6 +47,24 @@ type WrapperLogEvent = {
   line?: string
 }
 
+type FollowingCheckEvent = {
+  phase?: string
+  reason?: string
+  artists?: number
+  totalArtists?: number
+  queued?: number
+  discovered?: number
+  artistName?: string
+  message?: string
+}
+
+type FollowingDownloadEvent = {
+  artistName?: string
+  albumTitle?: string
+  jobId?: string
+  error?: string
+}
+
 const MAX_FEED_ITEMS = 120
 const MAX_TERMINAL_LINES = 600
 
@@ -214,6 +232,20 @@ export function useActivityFeed() {
           text: line,
           channel: 'stdout',
         })
+        return
+      }
+
+      if (type === 'following.check') {
+        const event = data as FollowingCheckEvent
+        appendFeedItem(makeFollowingCheckFeedItem(event, now, `following-feed-${nextId()}`))
+        appendTerminalLine(makeFollowingCheckLine(event, now, `following-event-${nextId()}`))
+        return
+      }
+
+      if (type === 'following.download') {
+        const event = data as FollowingDownloadEvent
+        appendFeedItem(makeFollowingDownloadFeedItem(event, now, `following-download-feed-${nextId()}`))
+        appendTerminalLine(makeFollowingDownloadLine(event, now, `following-download-event-${nextId()}`))
       }
     },
     {
@@ -385,11 +417,105 @@ function makeWrapperEventLine(event: WrapperEvent, ts: number, id: string): Acti
   }
 }
 
+function makeFollowingCheckFeedItem(
+  event: FollowingCheckEvent,
+  ts: number,
+  id: string,
+): ActivityFeedItem {
+  return {
+    id,
+    ts,
+    source: 'system',
+    severity: followingCheckSeverity(event),
+    title: followingCheckTitle(event),
+    detail: followingCheckDetail(event),
+  }
+}
+
+function makeFollowingCheckLine(
+  event: FollowingCheckEvent,
+  ts: number,
+  id: string,
+): ActivityTerminalLine {
+  const detail = followingCheckDetail(event)
+  return {
+    id,
+    ts,
+    source: 'system',
+    severity: followingCheckSeverity(event),
+    text: `[following] ${followingCheckTitle(event)}${detail ? ` · ${detail}` : ''}`,
+    channel: 'event',
+  }
+}
+
+function makeFollowingDownloadFeedItem(
+  event: FollowingDownloadEvent,
+  ts: number,
+  id: string,
+): ActivityFeedItem {
+  const failed = Boolean(event.error)
+  return {
+    id,
+    ts,
+    source: 'system',
+    severity: failed ? 'error' : 'success',
+    title: failed ? 'Auto-download failed' : 'Auto-download triggered',
+    detail: `${event.artistName || 'Followed artist'} — ${event.albumTitle || 'New release'}${event.error ? ` · ${event.error}` : ''}`,
+  }
+}
+
+function makeFollowingDownloadLine(
+  event: FollowingDownloadEvent,
+  ts: number,
+  id: string,
+): ActivityTerminalLine {
+  const failed = Boolean(event.error)
+  return {
+    id,
+    ts,
+    source: 'system',
+    severity: failed ? 'error' : 'success',
+    text: `[following] ${failed ? 'failed' : 'queued'} ${event.artistName || 'Followed artist'} — ${event.albumTitle || 'New release'}${event.error ? ` · ${event.error}` : ''}`,
+    channel: 'event',
+  }
+}
+
 function wrapperSeverity(phase: string, error?: string | null): ActivitySeverity {
   if (error || phase === 'failed') return 'error'
   if (phase === 'ready') return 'success'
   if (phase === '2fa-required') return 'warning'
   return 'info'
+}
+
+function followingCheckSeverity(event: FollowingCheckEvent): ActivitySeverity {
+  if (event.phase === 'failed') return 'error'
+  if (event.phase === 'skipped') return 'warning'
+  if (event.phase === 'completed') return event.queued ? 'success' : 'info'
+  return 'info'
+}
+
+function followingCheckTitle(event: FollowingCheckEvent) {
+  if (event.phase === 'started') return 'Checking followed artists'
+  if (event.phase === 'completed') return 'Followed artists checked'
+  if (event.phase === 'skipped') return 'Auto-downloads paused'
+  if (event.phase === 'artist-started') return `Checking ${event.artistName || 'artist'}`
+  if (event.phase === 'artist-completed') return `Checked ${event.artistName || 'artist'}`
+  if (event.phase === 'failed') return 'Followed artist check failed'
+  return 'Followed artist event'
+}
+
+function followingCheckDetail(event: FollowingCheckEvent) {
+  if (event.message) return event.message
+  if (event.phase === 'started') {
+    return `${event.artists || 0} due of ${event.totalArtists || 0} followed artists`
+  }
+  if (event.phase === 'completed') {
+    return `${event.discovered || 0} new releases found · ${event.queued || 0} queued`
+  }
+  if (event.phase === 'artist-completed') {
+    return `${event.discovered || 0} found · ${event.queued || 0} queued`
+  }
+  return undefined
 }
 
 function wrapperTitle(phase: string) {

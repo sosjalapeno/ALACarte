@@ -1,8 +1,7 @@
 import express from 'express'
 
-import { getArtist } from '../lib/appleApi.mjs'
 import { readSettings } from '../lib/settingsStore.mjs'
-import { filterAlbumsByRating } from '../lib/contentRatingFilter.mjs'
+import { loadArtistCatalog } from '../lib/artistCatalog.mjs'
 
 export const artistRouter = express.Router()
 
@@ -15,37 +14,16 @@ artistRouter.get('/:id', async (req, res) => {
       req.query.storefront || settings.storefront || 'us',
     )
     const language = settings.language || 'en-US'
-    const raw = await getArtist({ storefront, id, language })
-    const a = raw?.data?.[0]
-    if (!a) return res.status(404).json({ error: 'artist not found' })
-    const albums = (a.relationships?.albums?.data || []).map((x) => ({
-      id: x.id,
-      type: x.type,
-      name: x.attributes?.name,
-      artistId: a.id,
-      artistName: x.attributes?.artistName || a.attributes?.name,
-      releaseDate: x.attributes?.releaseDate,
-      year: x.attributes?.releaseDate
-        ? String(x.attributes.releaseDate).slice(0, 4)
-        : null,
-      trackCount: x.attributes?.trackCount,
-      artworkTemplate: x.attributes?.artwork?.url || null,
-      artworkColor: x.attributes?.artwork?.bgColor || null,
-      isSingle: x.attributes?.isSingle,
-      contentRating: x.attributes?.contentRating,
-    }))
-    const filteredAlbums = filterAlbumsByRating(
-      albums,
-      settings.explicitFilter || 'explicit',
-    )
+    const catalog = await loadArtistCatalog({
+      artistId: id,
+      storefront,
+      language,
+      explicitFilter: settings.explicitFilter || 'explicit',
+    })
+    if (!catalog?.artist) return res.status(404).json({ error: 'artist not found' })
     res.json({
-      artist: {
-        id: a.id,
-        name: a.attributes?.name,
-        genreNames: a.attributes?.genreNames || [],
-        url: a.attributes?.url,
-      },
-      albums: filteredAlbums,
+      artist: catalog.artist,
+      albums: catalog.albums,
       storefront,
     })
   } catch (err) {

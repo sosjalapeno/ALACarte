@@ -18,6 +18,8 @@ export type Artist = {
   name: string
   genreNames?: string[]
   url?: string
+  artworkTemplate?: string | null
+  artworkColor?: string | null
 }
 
 export type Song = {
@@ -146,6 +148,20 @@ export type PublicSettings = {
   navidromeUrl: string
   navidromeUser: string | null
   hasNavidromeCreds: boolean
+  autoDownloadsEnabled: boolean
+  autoDownloadCheckFrequency: '12h' | 'daily' | 'weekly'
+}
+
+export type FollowedArtist = Artist & {
+  storefront: string
+  knownReleaseIds: string[]
+  latestReleaseDate: string | null
+  lastCheckedAt: number
+  followedAt: number
+  updatedAt: number
+  totalReleaseCount: number
+  missingReleaseCount: number
+  fullyDownloaded: boolean
 }
 
 export type LibrarySingle = {
@@ -376,6 +392,41 @@ export const api = {
     http<{ playlist: PlaylistDetail; storefront: string }>(
       `/api/playlist/${encodeURIComponent(id)}`,
     ),
+  following: () => http<{ artists: FollowedArtist[] }>('/api/following'),
+  followedArtist: (id: string) =>
+    http<{ artist: FollowedArtist | null }>(
+      `/api/following/${encodeURIComponent(id)}`,
+    ),
+  followArtist: (id: string, downloadNow: boolean) =>
+    http<{
+      artist: FollowedArtist | null
+      queued: Job[]
+      failed?: Array<{ albumId: string; albumTitle?: string; error: string }>
+    }>(
+      `/api/following/${encodeURIComponent(id)}`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ downloadNow }),
+      },
+    ),
+  unfollowArtist: (id: string) =>
+    http<{ ok: boolean; existed: boolean }>(
+      `/api/following/${encodeURIComponent(id)}`,
+      { method: 'DELETE' },
+    ),
+  runFollowingCheck: () =>
+    http<{ ok: boolean; artists?: number; queued?: number; discovered?: number }>(
+      '/api/following/check/run',
+      { method: 'POST' },
+    ),
+  downloadMissingReleases: () =>
+    http<{ ok: boolean; queued: number }>('/api/following/download-missing', {
+      method: 'POST',
+    }),
+  downloadArtistMissingReleases: (id: string) =>
+    http<{ ok: boolean; queued: number }>(`/api/following/${encodeURIComponent(id)}/download-missing`, {
+      method: 'POST',
+    }),
   queue: () => http<{ jobs: Job[] }>('/api/queue'),
   library: () =>
     http<{

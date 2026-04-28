@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ListChecks, X } from 'lucide-react'
+import { CheckCircle2, ListChecks, Radar, UserRoundCheck, X } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
 
 import { api, type Album, type Artist as ArtistT } from '../api/client'
 import { AlbumCard } from '../components/AlbumCard'
@@ -8,6 +9,7 @@ import { SelectDownloadsModal } from '../components/SelectDownloadsModal'
 import { Card } from '../components/Card'
 import { Badge } from '../components/Badge'
 import { Button } from '../components/Button'
+import { Modal } from '../components/Modal'
 import { StaggeredList, StaggeredItem } from '../components/StaggeredList'
 import { useLibraryPresence } from '../hooks/useLibraryPresence'
 
@@ -17,7 +19,11 @@ export function ArtistPage() {
   const [albums, setAlbums] = useState<Album[]>([])
   const [error, setError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [followModalOpen, setFollowModalOpen] = useState(false)
+  const [following, setFollowing] = useState(false)
+  const [followSubmitting, setFollowSubmitting] = useState(false)
   const [queuedCount, setQueuedCount] = useState(0)
+  const [followBanner, setFollowBanner] = useState(false)
   const { isAlbumInLibrary } = useLibraryPresence()
 
   useEffect(() => {
@@ -25,6 +31,12 @@ export function ArtistPage() {
     const t = setTimeout(() => setQueuedCount(0), 6000)
     return () => clearTimeout(t)
   }, [queuedCount])
+
+  useEffect(() => {
+    if (!followBanner) return
+    const t = setTimeout(() => setFollowBanner(false), 6000)
+    return () => clearTimeout(t)
+  }, [followBanner])
 
   useEffect(() => {
     if (!id) return
@@ -47,35 +59,103 @@ export function ArtistPage() {
     }
   }, [id])
 
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    api
+      .followedArtist(id)
+      .then((r) => {
+        if (!cancelled) setFollowing(Boolean(r.artist))
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [id])
+
   const inLibraryAlbums = useMemo(
     () =>
       Object.fromEntries(albums.map((album) => [album.id, isAlbumInLibrary(album)])),
     [albums, isAlbumInLibrary],
   )
 
+  const followArtist = async (downloadNow: boolean) => {
+    if (!id) return
+    setFollowSubmitting(true)
+    setError(null)
+    setFollowModalOpen(false)
+    try {
+      const result = await api.followArtist(id, downloadNow)
+      setFollowing(Boolean(result.artist))
+      setQueuedCount(downloadNow ? result.queued.length : 0)
+      setFollowBanner(true)
+    } catch (err: any) {
+      setError(err.message || 'Failed to follow artist')
+    } finally {
+      setFollowSubmitting(false)
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl pt-4 md:pt-6 space-y-4">
-      {queuedCount > 0 && (
-        <div className="flex items-center justify-between gap-3 rounded-app border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.10)] px-4 py-2.5 text-sm text-white/90 backdrop-blur-[10px]">
-          <div>
-            Queued <b>{queuedCount}</b> album{queuedCount === 1 ? '' : 's'}.{' '}
-            <Link
-              to="/"
-              className="font-medium text-[rgb(var(--accent))] underline underline-offset-2 transition-colors hover:text-white"
-            >
-              Open activity
-            </Link>
-          </div>
-          <button
-            type="button"
-            onClick={() => setQueuedCount(0)}
-            aria-label="Dismiss"
-            className="shrink-0 inline-flex h-[30px] w-[30px] items-center justify-center rounded-full border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.08)] text-white/75 transition-[background,border-color,color] duration-[250ms] ease-smooth hover:border-[rgba(var(--accent),0.45)] hover:bg-[rgba(var(--accent),0.18)] hover:text-white"
+      <AnimatePresence>
+        {queuedCount > 0 && (
+          <motion.div
+            key="queued-banner"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+            className="flex items-center justify-between gap-3 rounded-app border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.10)] px-4 py-2.5 text-sm text-white/90 backdrop-blur-[10px]"
           >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+            <div>
+              Queued <b>{queuedCount}</b> album{queuedCount === 1 ? '' : 's'}.{' '}
+              <Link
+                to="/"
+                className="font-medium text-[rgb(var(--accent))] underline underline-offset-2 transition-colors hover:text-white"
+              >
+                Open activity
+              </Link>
+            </div>
+            <button
+              type="button"
+              onClick={() => setQueuedCount(0)}
+              aria-label="Dismiss"
+              className="shrink-0 inline-flex h-[30px] w-[30px] items-center justify-center rounded-full border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.08)] text-white/75 transition-[background,border-color,color] duration-[250ms] ease-smooth hover:border-[rgba(var(--accent),0.45)] hover:bg-[rgba(var(--accent),0.18)] hover:text-white"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        )}
+        {followBanner && (
+          <motion.div
+            key="follow-banner"
+            initial={{ opacity: 0, y: -8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.98 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+            className="flex items-center justify-between gap-3 rounded-app border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.10)] px-4 py-2.5 text-sm text-white/90 backdrop-blur-[10px]"
+          >
+            <div>
+              <b>{artist?.name || 'Artist'}</b> is now followed.{' '}
+              <Link
+                to="/following"
+                className="font-medium text-[rgb(var(--accent))] underline underline-offset-2 transition-colors hover:text-white"
+              >
+                Open Following
+              </Link>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFollowBanner(false)}
+              aria-label="Dismiss"
+              className="shrink-0 inline-flex h-[30px] w-[30px] items-center justify-center rounded-full border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.08)] text-white/75 transition-[background,border-color,color] duration-[250ms] ease-smooth hover:border-[rgba(var(--accent),0.45)] hover:bg-[rgba(var(--accent),0.18)] hover:text-white"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {error && <Badge variant="bad">{error}</Badge>}
       {artist && (
         <>
@@ -89,14 +169,25 @@ export function ArtistPage() {
                 ))}
               </div>
             )}
-            {albums.length > 0 && (
-              <div className="mt-4">
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                onClick={() => setFollowModalOpen(true)}
+                className={following ? 'border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.14)] text-[rgb(var(--accent))]' : ''}
+              >
+                {following ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <UserRoundCheck className="h-4 w-4" />
+                )}
+                {following ? 'Following' : 'Follow'}
+              </Button>
+              {albums.length > 0 && (
                 <Button onClick={() => setModalOpen(true)}>
                   <ListChecks className="h-4 w-4" />
                   Download multiple
                 </Button>
-              </div>
-            )}
+              )}
+            </div>
           </header>
           <section>
             <h2 className="text-sm font-semibold uppercase tracking-wider text-white/50 mb-3">Albums</h2>
@@ -122,6 +213,33 @@ export function ArtistPage() {
         inLibraryMap={inLibraryAlbums}
         onQueued={(n) => setQueuedCount(n)}
       />
+      <Modal open={followModalOpen} onClose={() => setFollowModalOpen(false)} label="Follow artist" placement="center" className="!max-w-[40rem]">
+        <div className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.12)] text-[rgb(var(--accent))]">
+              <Radar className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs uppercase tracking-wider text-white/55">Follow artist</div>
+              <h2 className="mt-1 text-lg font-semibold text-white">{artist?.name || 'Artist'}</h2>
+              <p className="mt-2 text-sm text-white/60">
+                Download current discography now, or only track future releases?
+              </p>
+            </div>
+          </div>
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button onClick={() => setFollowModalOpen(false)} disabled={followSubmitting} variant="ghost">
+              Cancel
+            </Button>
+            <Button onClick={() => followArtist(false)} disabled={followSubmitting}>
+              Future releases only
+            </Button>
+            <Button onClick={() => followArtist(true)} disabled={followSubmitting}>
+              Download current discography
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

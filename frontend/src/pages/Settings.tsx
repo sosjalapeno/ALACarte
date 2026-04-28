@@ -8,6 +8,7 @@ import {
   Key,
   Globe,
   FolderOpen,
+  Radar,
   ShieldCheck,
   User as UserIcon,
 } from 'lucide-react'
@@ -78,6 +79,15 @@ const QUALITY_OPTIONS: Array<{ value: PublicSettings['quality']; label: string }
   { value: 'alac', label: 'Prefer ALAC' },
   { value: 'atmos', label: 'Prefer Dolby Atmos' },
   { value: 'aac', label: 'Prefer AAC' },
+]
+
+const AUTO_DOWNLOAD_FREQUENCY_OPTIONS: Array<{
+  value: PublicSettings['autoDownloadCheckFrequency']
+  label: string
+}> = [
+  { value: '12h', label: 'Every 12 hours' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
 ]
 
 export function SettingsPage() {
@@ -317,6 +327,48 @@ export function SettingsPage() {
                     <option value="5000x5000" className="bg-zinc-900">5000×5000 (max, large)</option>
                   </select>
 
+                </div>
+              </label>
+            </div>
+          </SettingsCard>
+        </StaggeredItem>
+
+        <StaggeredItem>
+          <SettingsCard icon={<Radar className="h-4 w-4" />} title="Auto-downloads">
+            <div className="space-y-4">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={settings.autoDownloadsEnabled}
+                  onChange={(e) => update({ autoDownloadsEnabled: e.target.checked })}
+                  className="mt-0.5 shrink-0 focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent),0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
+                />
+                <div>
+                  <div className="text-sm font-medium">Enable Auto-Downloads</div>
+                  <div className="mt-1 text-sm text-white/55">
+                    Pause background checks without changing followed artists.
+                  </div>
+                </div>
+              </label>
+              <label className="flex flex-col gap-1.5 md:flex-row md:items-start md:gap-3">
+                <span className="text-sm text-white/70 md:w-32 md:pt-2">Check frequency</span>
+                <div className="md:flex-1">
+                  <select
+                    value={settings.autoDownloadCheckFrequency}
+                    onChange={(e) =>
+                      update({
+                        autoDownloadCheckFrequency:
+                          e.target.value as PublicSettings['autoDownloadCheckFrequency'],
+                      })
+                    }
+                    className="w-full rounded-app border border-white/[0.08] bg-white/[0.04] px-4 py-3 text-white outline-none transition-[border-color,background,box-shadow] duration-[250ms] ease-smooth focus:border-[rgba(var(--accent),0.45)] focus:bg-[rgba(var(--accent),0.04)] focus:shadow-[0_0_0_3px_rgba(var(--accent),0.18)]"
+                  >
+                    {AUTO_DOWNLOAD_FREQUENCY_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value} className="bg-zinc-900">
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </label>
             </div>

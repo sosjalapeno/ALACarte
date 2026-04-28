@@ -6,6 +6,27 @@ import { sanitizeSegment } from './folderLayout.mjs'
 const MUSIC_ROOT = process.env.AMDL_MUSIC_PATH || '/music'
 const AUDIO_RE = /\.(flac|m4a|mp3)$/i
 
+const SCAN_TTL_MS = 30_000
+let _scanCache = null
+let _scanCacheAt = 0
+
+async function getCachedIndex() {
+  const now = Date.now()
+  if (_scanCache && now - _scanCacheAt < SCAN_TTL_MS) return _scanCache
+  _scanCache = await scanLibrary()
+  _scanCacheAt = now
+  return _scanCache
+}
+
+export function invalidateLibraryCache() {
+  _scanCache = null
+  _scanCacheAt = 0
+}
+
+export async function scanLibraryOnce() {
+  return getCachedIndex()
+}
+
 export async function scanLibrary() {
   const albums = []
   const singles = []
@@ -97,17 +118,17 @@ export async function scanLibrary() {
   return { albums, singles, albumKeys, songKeys }
 }
 
-export async function hasAlbumInLibrary(artistName, albumName) {
+export async function hasAlbumInLibrary(artistName, albumName, preScannedIndex = null) {
   const key = makeAlbumKey(artistName, stripTrailingYear(albumName))
   if (!key) return false
-  const index = await scanLibrary()
+  const index = preScannedIndex || (await getCachedIndex())
   return index.albumKeys.has(key)
 }
 
-export async function hasSongInLibrary(artistName, songName) {
+export async function hasSongInLibrary(artistName, songName, preScannedIndex = null) {
   const key = makeSongKey(artistName, songName)
   if (!key) return false
-  const index = await scanLibrary()
+  const index = preScannedIndex || (await getCachedIndex())
   return index.songKeys.has(key)
 }
 

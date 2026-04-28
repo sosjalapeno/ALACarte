@@ -30,9 +30,12 @@ const DEFAULTS = {
   navidromeUrl: 'http://navidrome:4533',
   navidromeUser: null,
   navidromePassword: null,
+  autoDownloadsEnabled: true,
+  autoDownloadCheckFrequency: 'daily',
 }
 
 const QUALITY_VALUES = new Set(['flac', 'alac', 'atmos', 'aac'])
+const AUTO_DOWNLOAD_FREQUENCY_VALUES = new Set(['12h', 'daily', 'weekly'])
 
 export async function ensureConfigDir(dir = CONFIG_DIR) {
   await fsp.mkdir(dir, { recursive: true, mode: 0o750 })
@@ -118,11 +121,17 @@ function normalizeSettings(parsed) {
     parsed?.convertToFlac ?? parsed?.flac_conversion ?? DEFAULTS.convertToFlac
   const legacyQuality = legacyFlacConversion === false ? 'alac' : 'flac'
   const quality = hasQuality ? parsed.quality : legacyQuality
+  const autoDownloadCheckFrequency = AUTO_DOWNLOAD_FREQUENCY_VALUES.has(
+    parsed?.autoDownloadCheckFrequency,
+  )
+    ? parsed.autoDownloadCheckFrequency
+    : DEFAULTS.autoDownloadCheckFrequency
   return {
     ...DEFAULTS,
     ...parsed,
     quality,
     convertToFlac: quality === 'flac',
+    autoDownloadCheckFrequency,
   }
 }
 
@@ -158,6 +167,8 @@ export async function readPublicSettings() {
     navidromeUrl: s.navidromeUrl,
     navidromeUser: s.navidromeUser,
     hasNavidromeCreds: Boolean(s.navidromeUser && s.navidromePassword),
+    autoDownloadsEnabled: Boolean(s.autoDownloadsEnabled),
+    autoDownloadCheckFrequency: s.autoDownloadCheckFrequency || 'daily',
   }
 }
 
