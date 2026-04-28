@@ -447,8 +447,10 @@ export const api = {
     http<{ ok: boolean; queued: number }>(`/api/following/${encodeURIComponent(id)}/download-missing`, {
       method: 'POST',
     }),
-  effectiveCheckInterval: () =>
-    http<EffectiveCheckInterval>('/api/following/check/effective-interval'),
+  effectiveCheckInterval: (mode?: AutoCheckFrequency) =>
+    http<EffectiveCheckInterval>(
+      `/api/following/check/effective-interval${mode ? `?mode=${encodeURIComponent(mode)}` : ''}`,
+    ),
   queue: () => http<{ jobs: Job[] }>('/api/queue'),
   library: () =>
     http<{

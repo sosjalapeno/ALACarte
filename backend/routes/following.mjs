@@ -12,7 +12,7 @@ import { runAutoDownloadCheck } from '../lib/autoDownloads.mjs'
 import { enqueueAlbum } from '../lib/queue.mjs'
 import { scanLibraryOnce, hasAlbumInLibrary } from '../lib/libraryIndex.mjs'
 import { loadArtistCatalogCached } from '../lib/artistCatalogCache.mjs'
-import { describeInterval, resolveIntervalMs } from '../lib/checkInterval.mjs'
+import { describeInterval, FREQUENCY_VALUES, resolveIntervalMs } from '../lib/checkInterval.mjs'
 import { readSettings } from '../lib/settingsStore.mjs'
 
 export const followingRouter = express.Router()
@@ -33,12 +33,15 @@ followingRouter.post('/check/run', async (_req, res) => {
   }
 })
 
-followingRouter.get('/check/effective-interval', async (_req, res) => {
+followingRouter.get('/check/effective-interval', async (req, res) => {
   try {
     const settings = await readSettings()
     const store = await readFollowingStore()
     const followedCount = Object.keys(store.artists || {}).length
-    const mode = settings.autoDownloadCheckFrequency
+    const requestedMode = String(req.query?.mode || '')
+    const mode = FREQUENCY_VALUES.has(requestedMode)
+      ? requestedMode
+      : settings.autoDownloadCheckFrequency
     const ms = resolveIntervalMs(mode, followedCount)
     res.json({
       mode,

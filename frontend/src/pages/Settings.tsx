@@ -419,8 +419,9 @@ function EffectiveIntervalHint({
   const [data, setData] = useState<EffectiveCheckInterval | null>(null)
   useEffect(() => {
     let cancelled = false
+    setData(null)
     api
-      .effectiveCheckInterval()
+      .effectiveCheckInterval(mode)
       .then((r) => {
         if (!cancelled) setData(r)
       })
@@ -429,7 +430,7 @@ function EffectiveIntervalHint({
       cancelled = true
     }
   }, [mode])
-  if (!data) return null
+  if (!data || data.mode !== mode) return null
   if (mode === 'auto') {
     return (
       <p className="mt-2 text-xs text-white/45">
