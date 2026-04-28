@@ -3,12 +3,14 @@ import { cx } from '../lib/cx'
 
 type Props = {
   variant?: 'accent' | 'ghost'
+  active?: boolean
   className?: string
   children: React.ReactNode
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'className'>
 
 export function Button({
   variant = 'accent',
+  active = false,
   className,
   children,
   ...rest
@@ -20,8 +22,9 @@ export function Button({
       transition={{ type: 'spring', stiffness: 400, damping: 25 }}
       className={cx(
         'inline-flex min-h-11 select-none items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition-all',
-        'border border-white/10 bg-white/[0.06] text-white/80',
-        'hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.12)] hover:text-[rgb(var(--accent))]',
+        active
+          ? 'border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.14)] text-[rgb(var(--accent))]'
+          : 'border border-white/10 bg-white/[0.06] text-white/80 hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.12)] hover:text-[rgb(var(--accent))]',
         className,
       )}
       {...(rest as any)}

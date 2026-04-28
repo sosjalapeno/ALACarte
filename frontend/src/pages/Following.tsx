@@ -123,6 +123,7 @@ export function FollowingPage() {
           {showBulkButton && (
             <Button
               disabled={checking || loading || activeJobsTotal > 0}
+              active={activeJobsTotal > 0}
               onClick={() => {
                 api
                   .downloadMissingReleases()
@@ -131,11 +132,7 @@ export function FollowingPage() {
                     setError(err.message || 'Failed to download missing releases'),
                   )
               }}
-              className={
-                activeJobsTotal > 0
-                  ? 'whitespace-nowrap border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.14)] text-[rgb(var(--accent))]'
-                  : 'whitespace-nowrap'
-              }
+              className="whitespace-nowrap"
             >
               {activeJobsTotal > 0 ? (
                 <>
