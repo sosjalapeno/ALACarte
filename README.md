@@ -123,8 +123,6 @@ If Apple sign-in fails, check these first:
 - Running behind a VPN or proxy
 - Using a container with separate networking
 
-**Queue size** I wouldn't recommend queueing more than 10 albums at a time. The UI will let you queue more, but since the jobs process sequentially they will just sit there until the earlier jobs complete, and it might cause issues with the decryption wrapper.
-
 **Storage** - Lossless albums are ~300–600 MB each.
 - The staging area uses temporary space under `/music/.amdl-tmp/` while working.
 
