@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { CheckCircle2, ListChecks, Radar, UserRoundCheck, X } from 'lucide-react'
+import { ListChecks, Radar, UserRoundCheck, UserRoundMinus, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 
 import { api, type Album, type Artist as ArtistT } from '../api/client'
@@ -24,7 +24,8 @@ export function ArtistPage() {
   const [following, setFollowing] = useState(false)
   const [followSubmitting, setFollowSubmitting] = useState(false)
   const [queuedCount, setQueuedCount] = useState(0)
-  const [followBanner, setFollowBanner] = useState(false)
+  const [followBanner, setFollowBanner] = useState<null | 'followed' | 'unfollowed'>(null)
+  const [unfollowModalOpen, setUnfollowModalOpen] = useState(false)
   const { isAlbumInLibrary } = useLibraryPresence()
   const { followingState } = useActivityFeed()
 
@@ -44,7 +45,7 @@ export function ArtistPage() {
 
   useEffect(() => {
     if (!followBanner) return
-    const t = setTimeout(() => setFollowBanner(false), 6000)
+    const t = setTimeout(() => setFollowBanner(null), 6000)
     return () => clearTimeout(t)
   }, [followBanner])
 
@@ -98,9 +99,25 @@ export function ArtistPage() {
       const result = await api.followArtist(id, downloadNow)
       setFollowing(Boolean(result.artist))
       setQueuedCount(downloadNow ? result.queued.length : 0)
-      setFollowBanner(true)
+      setFollowBanner('followed')
     } catch (err: any) {
       setError(err.message || 'Failed to follow artist')
+    } finally {
+      setFollowSubmitting(false)
+    }
+  }
+
+  const unfollowArtist = async () => {
+    if (!id) return
+    setFollowSubmitting(true)
+    setError(null)
+    setUnfollowModalOpen(false)
+    try {
+      await api.unfollowArtist(id)
+      setFollowing(false)
+      setFollowBanner('unfollowed')
+    } catch (err: any) {
+      setError(err.message || 'Failed to unfollow artist')
     } finally {
       setFollowSubmitting(false)
     }
@@ -144,20 +161,32 @@ export function ArtistPage() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ type: 'spring', stiffness: 420, damping: 28 }}
-            className="flex items-center justify-between gap-3 rounded-app border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.10)] px-4 py-2.5 text-sm text-white/90 backdrop-blur-[10px]"
+            className={
+              followBanner === 'unfollowed'
+                ? 'flex items-center justify-between gap-3 rounded-app border border-rose-300/30 bg-rose-500/10 px-4 py-2.5 text-sm text-white/90 backdrop-blur-[10px]'
+                : 'flex items-center justify-between gap-3 rounded-app border border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.10)] px-4 py-2.5 text-sm text-white/90 backdrop-blur-[10px]'
+            }
           >
             <div>
-              <b>{artist?.name || 'Artist'}</b> is now followed.{' '}
-              <Link
-                to="/following"
-                className="font-medium text-[rgb(var(--accent))] underline underline-offset-2 transition-colors hover:text-white"
-              >
-                Open Following
-              </Link>
+              {followBanner === 'unfollowed' ? (
+                <>
+                  <b>{artist?.name || 'Artist'}</b> unfollowed.
+                </>
+              ) : (
+                <>
+                  <b>{artist?.name || 'Artist'}</b> is now followed.{' '}
+                  <Link
+                    to="/following"
+                    className="font-medium text-[rgb(var(--accent))] underline underline-offset-2 transition-colors hover:text-white"
+                  >
+                    Open Following
+                  </Link>
+                </>
+              )}
             </div>
             <button
               type="button"
-              onClick={() => setFollowBanner(false)}
+              onClick={() => setFollowBanner(null)}
               aria-label="Dismiss"
               className="shrink-0 inline-flex h-[30px] w-[30px] items-center justify-center rounded-full border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.08)] text-white/75 transition-[background,border-color,color] duration-[250ms] ease-smooth hover:border-[rgba(var(--accent),0.45)] hover:bg-[rgba(var(--accent),0.18)] hover:text-white"
             >
@@ -180,17 +209,24 @@ export function ArtistPage() {
               </div>
             )}
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button
-                onClick={() => setFollowModalOpen(true)}
-                className={following ? 'border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.14)] text-[rgb(var(--accent))]' : ''}
-              >
-                {following ? (
-                  <CheckCircle2 className="h-4 w-4" />
-                ) : (
+              {following ? (
+                <Button
+                  onClick={() => setUnfollowModalOpen(true)}
+                  disabled={followSubmitting}
+                  className="border-rose-300/30 bg-rose-500/10 text-rose-200 hover:border-rose-300/50 hover:bg-rose-500/20 hover:text-rose-100"
+                >
+                  <UserRoundMinus className="h-4 w-4" />
+                  Unfollow
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => setFollowModalOpen(true)}
+                  disabled={followSubmitting}
+                >
                   <UserRoundCheck className="h-4 w-4" />
-                )}
-                {following ? 'Following' : 'Follow'}
-              </Button>
+                  Follow
+                </Button>
+              )}
               {albums.length > 0 && (
                 <Button onClick={() => setModalOpen(true)}>
                   <ListChecks className="h-4 w-4" />
@@ -246,6 +282,45 @@ export function ArtistPage() {
             </Button>
             <Button onClick={() => followArtist(true)} disabled={followSubmitting}>
               Download current discography
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        open={unfollowModalOpen}
+        onClose={() => setUnfollowModalOpen(false)}
+        label="Unfollow artist"
+        placement="center"
+        className="!max-w-[36rem]"
+      >
+        <div className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-rose-300/30 bg-rose-500/10 text-rose-200">
+              <UserRoundMinus className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-xs uppercase tracking-wider text-white/55">Unfollow artist</div>
+              <h2 className="mt-1 text-lg font-semibold text-white">{artist?.name || 'Artist'}</h2>
+              <p className="mt-2 text-sm text-white/60">
+                Stop watching for new releases? Your existing downloads stay in the library.
+              </p>
+            </div>
+          </div>
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button
+              onClick={() => setUnfollowModalOpen(false)}
+              disabled={followSubmitting}
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={unfollowArtist}
+              disabled={followSubmitting}
+              className="border-rose-300/30 bg-rose-500/10 text-rose-200 hover:border-rose-300/50 hover:bg-rose-500/20 hover:text-rose-100"
+            >
+              <UserRoundMinus className="h-4 w-4" />
+              Unfollow
             </Button>
           </div>
         </div>

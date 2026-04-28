@@ -25,7 +25,8 @@ import {
   resolveArtistDir,
   sanitizeSegment,
 } from './folderLayout.mjs'
-import { hasAlbumInLibrary, hasSongInLibrary, stripTrailingYear } from './libraryIndex.mjs'
+import { hasAlbumInLibrary, hasSongInLibrary, invalidateLibraryCache, isPlaylistInLibrary, stripTrailingYear } from './libraryIndex.mjs'
+import { probeWrapperPorts } from './wrapperHealth.mjs'
 
 const MUSIC_ROOT = process.env.AMDL_MUSIC_PATH || '/music'
 const STAGING_ROOT = path.join(MUSIC_ROOT, '.amdl-tmp')
@@ -259,6 +260,10 @@ export async function enqueuePlaylist({ playlistId, storefront, quality }) {
     ) {
       return jobPublic(j)
     }
+  }
+
+  if (await isPlaylistInLibrary(playlistId)) {
+    throw alreadyInLibraryError('Already in library')
   }
 
   const id = crypto.randomUUID()

@@ -18,6 +18,15 @@ export function FollowingPage() {
   const [error, setError] = useState<string | null>(null)
   const [queuedCount, setQueuedCount] = useState(0)
   const activeJobsTotal = jobs.filter((j) => j.status === 'queued' || j.status === 'running').length
+  const anyMissing = artists.some((a) => {
+    const live = followingState[a.id]
+    const missing =
+      typeof live?.missingReleaseCount === 'number'
+        ? live.missingReleaseCount
+        : a.missingReleaseCount
+    return (a.totalReleaseCount || 0) > 0 && missing > 0
+  })
+  const showBulkButton = anyMissing || activeJobsTotal > 0
 
   const reload = () => {
     setLoading(true)
@@ -111,34 +120,36 @@ export function FollowingPage() {
             <RefreshCw className={checking ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
             {checking ? 'Checking…' : 'Check now'}
           </Button>
-          <Button
-            disabled={checking || loading || activeJobsTotal > 0}
-            onClick={() => {
-              api
-                .downloadMissingReleases()
-                .then((res) => setQueuedCount(res.queued))
-                .catch((err: any) =>
-                  setError(err.message || 'Failed to download missing releases'),
-                )
-            }}
-            className={
-              activeJobsTotal > 0
-                ? 'whitespace-nowrap border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.14)] text-[rgb(var(--accent))]'
-                : 'whitespace-nowrap'
-            }
-          >
-            {activeJobsTotal > 0 ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Downloading…
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4" />
-                Download discographies
-              </>
-            )}
-          </Button>
+          {showBulkButton && (
+            <Button
+              disabled={checking || loading || activeJobsTotal > 0}
+              onClick={() => {
+                api
+                  .downloadMissingReleases()
+                  .then((res) => setQueuedCount(res.queued))
+                  .catch((err: any) =>
+                    setError(err.message || 'Failed to download missing releases'),
+                  )
+              }}
+              className={
+                activeJobsTotal > 0
+                  ? 'whitespace-nowrap border-[rgba(var(--accent),0.35)] bg-[rgba(var(--accent),0.14)] text-[rgb(var(--accent))]'
+                  : 'whitespace-nowrap'
+              }
+            >
+              {activeJobsTotal > 0 ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Downloading…
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4" />
+                  Download discographies
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </section>
 

@@ -454,19 +454,22 @@ export const api = {
     http<{
       albums: LibraryAlbum[]
       singles: LibrarySingle[]
-      totals: { albums: number; singles: number }
+      playlistIds?: string[]
+      totals: { albums: number; singles: number; playlists?: number }
     }>('/api/library'),
   libraryPresence: (payload: {
     albums?: Array<{ id: string; artistName: string; albumName: string }>
     songs?: Array<{ id: string; artistName: string; songName: string }>
+    playlists?: Array<{ id: string }>
   }) =>
-    http<{ albums: Record<string, boolean>; songs: Record<string, boolean> }>(
-      '/api/library/presence',
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      },
-    ),
+    http<{
+      albums: Record<string, boolean>
+      songs: Record<string, boolean>
+      playlists: Record<string, boolean>
+    }>('/api/library/presence', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   deleteLibrarySong: (relPath: string) =>
     http<{ ok: boolean; removedLyrics?: boolean }>('/api/library/song', {
       method: 'DELETE',

@@ -305,7 +305,13 @@ function Section({ title, children, empty }: { title: string; empty?: boolean; c
 
 function SongRow({ song }: { song: Song }) {
   const { jobs } = useQueue()
-  const { ready, isSongInLibrary, verifySongPresence } = useLibraryPresence()
+  const {
+    ready,
+    isSongInLibrary,
+    isAlbumInLibrary,
+    verifySongPresence,
+    verifyAlbumPresence,
+  } = useLibraryPresence()
   const touchMode = useTouchMode()
   const matching = useMemo(() => {
     if (!song.id) return null
@@ -317,7 +323,11 @@ function SongRow({ song }: { song: Song }) {
   }, [jobs, song.id])
 
   const canDownload = Boolean(song.albumId)
-  const alreadyInLibrary = isSongInLibrary(song)
+  const albumLookup = song.albumName
+    ? { id: song.albumId || '', artistName: song.artistName, name: song.albumName }
+    : null
+  const alreadyInLibrary =
+    isSongInLibrary(song) || (albumLookup ? isAlbumInLibrary(albumLookup) : false)
 
   return (
     <Card hover className="group relative flex items-center gap-3 p-2">
@@ -375,13 +385,17 @@ function SongRow({ song }: { song: Song }) {
             job={matching}
             onStart={async () => {
               if (!song.albumId) return false
-              if (!ready && (await verifySongPresence(song))) return false
+              if (!ready) {
+                if (await verifySongPresence(song)) return false
+                if (albumLookup && (await verifyAlbumPresence(albumLookup))) return false
+              }
               try {
                 await api.enqueueSong(song.id, song.albumId)
                 return true
               } catch (err: any) {
                 if (/already in library/i.test(String(err?.message || ''))) {
                   await verifySongPresence(song)
+                  if (albumLookup) await verifyAlbumPresence(albumLookup)
                   return false
                 }
                 throw err

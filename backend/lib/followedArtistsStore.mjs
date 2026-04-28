@@ -1,7 +1,7 @@
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 
-import { loadArtistCatalogCached, invalidateArtistCatalog } from './artistCatalogCache.mjs'
+import { invalidateArtistCatalog, loadArtistCatalogCached, peekAnyCachedCatalog } from './artistCatalogCache.mjs'
 import { invalidateLibraryCache, makeAlbumKey, scanLibraryOnce, stripTrailingYear } from './libraryIndex.mjs'
 import { readSettings } from './settingsStore.mjs'
 import { onEvent as subscribeEvent, emitEvent } from './eventBus.mjs'
@@ -218,5 +218,57 @@ subscribeEvent(async (evt) => {
     }
   } catch (err) {
     console.error('Failed to decrement missingReleaseCount for job', job.id, err)
+  }
+})
+
+function normalizeArtistKey(name) {
+  return String(name || '')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+subscribeEvent(async (evt) => {
+  if (!evt || evt.type !== 'library.changed') return
+  const data = evt.data || {}
+  const targetKey = normalizeArtistKey(data.artistName)
+  if (!targetKey) return
+  try {
+    const store = await readFollowingStore()
+    const matches = Object.values(store.artists).filter(
+      (a) => normalizeArtistKey(a.name) === targetKey,
+    )
+    if (matches.length === 0) return
+    const libIndex = await scanLibraryOnce()
+    for (const artist of matches) {
+      const catalog = peekAnyCachedCatalog(artist.id)
+      let nextMissing
+      if (catalog && Array.isArray(catalog.albums)) {
+        nextMissing = 0
+        for (const album of catalog.albums) {
+          if (!album.artistName || !album.name) continue
+          const key = makeAlbumKey(album.artistName, stripTrailingYear(album.name))
+          if (!key || !libIndex.albumKeys.has(key)) nextMissing++
+        }
+      } else if (data.kind === 'album-deleted' || data.kind === 'song-deleted') {
+        nextMissing = Math.min(
+          artist.totalReleaseCount || (artist.missingReleaseCount || 0) + 1,
+          (artist.missingReleaseCount || 0) + 1,
+        )
+      } else {
+        continue
+      }
+      if (nextMissing === artist.missingReleaseCount) continue
+      await updateFollowedArtist(artist.id, { missingReleaseCount: nextMissing })
+      emitEvent('following.updated', {
+        artistId: artist.id,
+        missingReleaseCount: nextMissing,
+        totalReleaseCount: artist.totalReleaseCount,
+      })
+    }
+  } catch (err) {
+    console.error('library.changed recompute failed', err)
   }
 })

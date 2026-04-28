@@ -13,6 +13,7 @@ import {
   type Album,
   type LibraryAlbum,
   type LibrarySingle,
+  type Playlist,
   type Song,
 } from '../api/client'
 import { stripYear } from '../lib/format'
@@ -20,27 +21,31 @@ import { useEventStream } from './useEventStream'
 
 type AlbumLookup = Pick<Album, 'id' | 'artistName' | 'name'> & { albumName?: string | null }
 type SongLookup = Pick<Song, 'id' | 'artistName' | 'name'> & { songName?: string | null }
+type PlaylistLookup = Pick<Playlist, 'id'>
 
 type LibraryPresenceContextValue = {
   loading: boolean
   ready: boolean
   isAlbumInLibrary: (album: AlbumLookup | null | undefined) => boolean
   isSongInLibrary: (song: SongLookup | null | undefined) => boolean
+  isPlaylistInLibrary: (playlist: PlaylistLookup | null | undefined) => boolean
   verifyAlbumPresence: (album: AlbumLookup | null | undefined, force?: boolean) => Promise<boolean>
   verifySongPresence: (song: SongLookup | null | undefined, force?: boolean) => Promise<boolean>
+  verifyPlaylistPresence: (playlist: PlaylistLookup | null | undefined, force?: boolean) => Promise<boolean>
   refreshLibraryPresence: () => Promise<void>
 }
 
 type PresenceSnapshot = {
   albumKeys: Record<string, true>
   songKeys: Record<string, true>
+  playlistIds: Record<string, true>
 }
 
 const BAD_CHARS = /[<>:"/\\|?*\x00-\x1f]/g
 const LibraryPresenceContext = createContext<LibraryPresenceContextValue | null>(null)
 
 export function LibraryPresenceProvider({ children }: { children: React.ReactNode }) {
-  const [snapshot, setSnapshot] = useState<PresenceSnapshot>({ albumKeys: {}, songKeys: {} })
+  const [snapshot, setSnapshot] = useState<PresenceSnapshot>({ albumKeys: {}, songKeys: {}, playlistIds: {} })
   const [loading, setLoading] = useState(true)
   const [ready, setReady] = useState(false)
   const requestIdRef = useRef(0)
@@ -52,7 +57,7 @@ export function LibraryPresenceProvider({ children }: { children: React.ReactNod
     try {
       const r = await api.library()
       if (requestId !== requestIdRef.current) return
-      setSnapshot(buildSnapshot(r.albums, r.singles))
+      setSnapshot(buildSnapshot(r.albums, r.singles, r.playlistIds || []))
       setReady(true)
     } finally {
       if (!silent && requestId === requestIdRef.current) setLoading(false)
@@ -92,6 +97,14 @@ export function LibraryPresenceProvider({ children }: { children: React.ReactNod
       return Boolean(key && snapshot.songKeys[key])
     },
     [snapshot.songKeys],
+  )
+
+  const isPlaylistInLibrary = useCallback(
+    (playlist: PlaylistLookup | null | undefined) => {
+      const id = String(playlist?.id || '')
+      return Boolean(id && snapshot.playlistIds[id])
+    },
+    [snapshot.playlistIds],
   )
 
   const verifyAlbumPresence = useCallback(
@@ -156,6 +169,25 @@ export function LibraryPresenceProvider({ children }: { children: React.ReactNod
     [snapshot.songKeys],
   )
 
+  const verifyPlaylistPresence = useCallback(
+    async (playlist: PlaylistLookup | null | undefined, force = false) => {
+      const id = String(playlist?.id || '')
+      if (!id) return false
+      if (!force && snapshot.playlistIds[id]) return true
+      const r = await api.libraryPresence({ playlists: [{ id }] })
+      const present = Boolean(r.playlists?.[id])
+      setSnapshot((prev) => {
+        if (present === Boolean(prev.playlistIds[id])) return prev
+        const next = { ...prev.playlistIds }
+        if (present) next[id] = true
+        else delete next[id]
+        return { ...prev, playlistIds: next }
+      })
+      return present
+    },
+    [snapshot.playlistIds],
+  )
+
   const refreshLibraryPresence = useCallback(async () => {
     await loadSnapshot(true)
   }, [loadSnapshot])
@@ -166,18 +198,22 @@ export function LibraryPresenceProvider({ children }: { children: React.ReactNod
       ready,
       isAlbumInLibrary,
       isSongInLibrary,
+      isPlaylistInLibrary,
       verifyAlbumPresence,
       verifySongPresence,
+      verifyPlaylistPresence,
       refreshLibraryPresence,
     }),
     [
       isAlbumInLibrary,
       isSongInLibrary,
+      isPlaylistInLibrary,
       loading,
       ready,
       refreshLibraryPresence,
       verifyAlbumPresence,
       verifySongPresence,
+      verifyPlaylistPresence,
     ],
   )
 
@@ -196,9 +232,14 @@ export function useLibraryPresence() {
   return value
 }
 
-function buildSnapshot(albums: LibraryAlbum[], singles: LibrarySingle[]): PresenceSnapshot {
+function buildSnapshot(
+  albums: LibraryAlbum[],
+  singles: LibrarySingle[],
+  playlistIdsArr: string[],
+): PresenceSnapshot {
   const albumKeys: Record<string, true> = {}
   const songKeys: Record<string, true> = {}
+  const playlistIds: Record<string, true> = {}
 
   for (const album of albums) {
     const key = makeAlbumKey(album)
@@ -210,7 +251,11 @@ function buildSnapshot(albums: LibraryAlbum[], singles: LibrarySingle[]): Presen
     if (key) songKeys[key] = true
   }
 
-  return { albumKeys, songKeys }
+  for (const id of playlistIdsArr || []) {
+    if (id) playlistIds[String(id)] = true
+  }
+
+  return { albumKeys, songKeys, playlistIds }
 }
 
 function makeAlbumKey(album: AlbumLookup | LibraryAlbum | null | undefined) {

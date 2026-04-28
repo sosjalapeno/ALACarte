@@ -64,6 +64,20 @@ export async function loadArtistCatalogCached(opts, { force = false, followedCou
   return promise
 }
 
+export function peekArtistCatalog(opts) {
+  const key = makeKey(opts)
+  const hit = cache.get(key)
+  return hit?.catalog || null
+}
+
+export function peekAnyCachedCatalog(artistId) {
+  if (!artistId) return null
+  for (const [key, value] of cache.entries()) {
+    if (key.endsWith(`|${artistId}`)) return value.catalog
+  }
+  return null
+}
+
 export function invalidateArtistCatalog(artistId) {
   if (!artistId) {
     cache.clear()

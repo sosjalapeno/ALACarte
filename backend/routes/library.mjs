@@ -3,7 +3,8 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 
 import { searchCatalog } from '../lib/appleApi.mjs'
-import { makeAlbumKey, makeSongKey, scanLibrary, stripTrailingYear } from '../lib/libraryIndex.mjs'
+import { emitEvent } from '../lib/eventBus.mjs'
+import { invalidateLibraryCache, makeAlbumKey, makeSongKey, scanLibrary, stripTrailingYear } from '../lib/libraryIndex.mjs'
 import { readSettings } from '../lib/settingsStore.mjs'
 
 export const libraryRouter = express.Router()
@@ -37,9 +38,11 @@ libraryRouter.get('/', async (_req, res) => {
     res.json({
       albums,
       singles,
+      playlistIds: Array.from(index.playlistIds || []),
       totals: {
         albums: albums.length,
         singles: singles.length,
+        playlists: (index.playlistIds || new Set()).size,
       },
     })
   } catch (err) {
@@ -51,6 +54,7 @@ libraryRouter.post('/presence', async (req, res) => {
   try {
     const albumChecks = Array.isArray(req.body?.albums) ? req.body.albums : []
     const songChecks = Array.isArray(req.body?.songs) ? req.body.songs : []
+    const playlistChecks = Array.isArray(req.body?.playlists) ? req.body.playlists : []
     const index = await scanLibrary()
 
     const albums = {}
@@ -72,7 +76,14 @@ libraryRouter.post('/presence', async (req, res) => {
       songs[id] = index.songKeys.has(makeSongKey(artistName, songName))
     }
 
-    res.json({ albums, songs })
+    const playlists = {}
+    for (const item of playlistChecks) {
+      const id = String(item?.id || '')
+      if (!id) continue
+      playlists[id] = index.playlistIds.has(id)
+    }
+
+    res.json({ albums, songs, playlists })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -105,6 +116,13 @@ libraryRouter.delete('/song', async (req, res) => {
     )
     const removedLyrics = await fsp.unlink(lrcPath).then(() => true).catch(() => false)
 
+    invalidateLibraryCache()
+    emitEvent('library.changed', {
+      kind: 'song-deleted',
+      artistName: parts[0],
+      songName: path.basename(parts[2], path.extname(parts[2])),
+    })
+
     return res.json({ ok: true, removedLyrics })
   } catch (err) {
     if (err.message === 'out of music root') {
@@ -135,6 +153,12 @@ libraryRouter.delete('/album', async (req, res) => {
     }
 
     await fsp.rm(abs, { recursive: true, force: true })
+    invalidateLibraryCache()
+    emitEvent('library.changed', {
+      kind: 'album-deleted',
+      artistName: parts[0],
+      albumName: parts[1],
+    })
     return res.json({ ok: true })
   } catch (err) {
     if (err.message === 'out of music root') {
