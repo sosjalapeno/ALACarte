@@ -34,6 +34,12 @@ const HISTORY_FILE = path.join(CONFIG_DIR, 'history.ndjson')
 const MAX_HISTORY = 500
 const MAX_CONCURRENT = 1
 const QUALITY_VALUES = new Set(['flac', 'alac', 'atmos', 'aac'])
+const STALL_WARN_MS = Math.max(5_000, Number(process.env.AMDL_STALL_WARN_MS) || 60_000)
+const STALL_TIMEOUT_MS = Math.max(
+  STALL_WARN_MS + 5_000,
+  Number(process.env.AMDL_STALL_TIMEOUT_MS) || 120_000,
+)
+const STALL_TICK_MS = 5_000
 
 const state = {
   jobs: new Map(), // id -> job
@@ -173,7 +179,7 @@ async function appendHistory(j) {
   }
 }
 
-export async function enqueueAlbum({ albumId, storefront, quality }) {
+export async function enqueueAlbum({ albumId, storefront, quality, expectedArtistId }) {
   for (const j of state.jobs.values()) {
     if (
       j.albumId === albumId &&
@@ -213,7 +219,7 @@ export async function enqueueAlbum({ albumId, storefront, quality }) {
     albumId,
     albumTitle: stripTrailingYear(meta?.name) || 'Unknown album',
     artist: meta?.artistName || 'Unknown artist',
-    artistId: meta?.artistId || null,
+    artistId: expectedArtistId || meta?.artistId || null,
     year: meta?.year || null,
     artworkUrl: meta?.artworkTemplate
       ? meta.artworkTemplate
@@ -906,17 +912,70 @@ async function runAmdpDownload({ job, jobStaging, url, quality, isSong, progress
       : 'Downloading from Apple Music',
   })
 
+  let lastLineAt = Date.now()
+  let lastLine = ''
+  let warnFired = false
+  let stallReason = null
+  const watchdog = setInterval(() => {
+    if (stallReason) return
+    const idleMs = Date.now() - lastLineAt
+    if (idleMs >= STALL_TIMEOUT_MS) {
+      stallReason = `wrapper stalled (no output for ${Math.round(idleMs / 1000)}s)`
+      emitEvent('wrapper.stall.suspected', {
+        jobId: job.id,
+        albumTitle: job.albumTitle,
+        currentTrack: job.currentTrack || null,
+        idleMs,
+        thresholdMs: STALL_TIMEOUT_MS,
+        lastLine,
+        phase: 'aborting',
+      })
+      try {
+        ctl.abort()
+      } catch {
+        /* ignore */
+      }
+      return
+    }
+    if (idleMs >= STALL_WARN_MS && !warnFired) {
+      warnFired = true
+      emitEvent('wrapper.stall.suspected', {
+        jobId: job.id,
+        albumTitle: job.albumTitle,
+        currentTrack: job.currentTrack || null,
+        idleMs,
+        thresholdMs: STALL_WARN_MS,
+        lastLine,
+        phase: 'warning',
+      })
+    } else if (idleMs < STALL_WARN_MS && warnFired) {
+      warnFired = false
+    }
+  }, STALL_TICK_MS)
+
   try {
     const { waitExit } = spawnAmdp({
       args: buildAmdpArgs({ isSong, quality, url }),
       cwd: jobStaging,
       signal: ctl.signal,
       onLine: ({ line, which }) => {
+        lastLineAt = Date.now()
+        lastLine = line
         handleAmdpLine(job, line, which, progressState)
       },
     })
-    return await waitExit
+    try {
+      return await waitExit
+    } catch (err) {
+      if (stallReason) {
+        const e = new Error(stallReason)
+        e.code = 'WRAPPER_STALL'
+        throw e
+      }
+      throw err
+    }
   } finally {
+    clearInterval(watchdog)
     if (state.running.get(job.id) === ctl) {
       state.running.delete(job.id)
     }

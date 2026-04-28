@@ -119,6 +119,7 @@ async function checkFollowedArtist(artist, settings, libIndex) {
       const job = await enqueueAlbum({
         albumId: album.id,
         storefront: artist.storefront || settings.storefront || 'us',
+        expectedArtistId: artist.id,
       })
       queued += 1
       successfulIds.add(album.id)

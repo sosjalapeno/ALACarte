@@ -4,6 +4,7 @@ import path from 'node:path'
 import { loadArtistCatalog } from './artistCatalog.mjs'
 import { hasAlbumInLibrary, scanLibraryOnce } from './libraryIndex.mjs'
 import { readSettings } from './settingsStore.mjs'
+import { onEvent as subscribeEvent, emitEvent } from './eventBus.mjs'
 
 const CONFIG_DIR = process.env.AMDL_CONFIG_DIR || '/config'
 const FOLLOWING_FILE = path.join(CONFIG_DIR, 'followed-artists.json')
@@ -182,3 +183,20 @@ function normalizeArtistRecord(artist) {
     missingReleaseCount: Number(artist?.missingReleaseCount || 0),
   }
 }
+
+subscribeEvent(async (evt) => {
+  if (!evt || evt.type !== 'job.update') return
+  const job = evt.data
+  if (!job || job.status !== 'done' || job.kind !== 'album' || !job.artistId) return
+  try {
+    const store = await readFollowingStore()
+    const artist = store.artists[job.artistId]
+    if (artist && artist.missingReleaseCount > 0) {
+      const newCount = Math.max(0, artist.missingReleaseCount - 1)
+      await updateFollowedArtist(job.artistId, { missingReleaseCount: newCount })
+      emitEvent('following.updated', { artistId: job.artistId, missingReleaseCount: newCount })
+    }
+  } catch (err) {
+    console.error('Failed to decrement missingReleaseCount for job', job.id, err)
+  }
+})

@@ -6,10 +6,12 @@ import {
   listFollowedArtists,
   unfollowArtist,
   readFollowingStore,
+  updateFollowedArtist,
 } from '../lib/followedArtistsStore.mjs'
 import { runAutoDownloadCheck } from '../lib/autoDownloads.mjs'
 import { enqueueAlbum } from '../lib/queue.mjs'
 import { scanLibraryOnce, hasAlbumInLibrary } from '../lib/libraryIndex.mjs'
+import { loadArtistCatalog } from '../lib/artistCatalog.mjs'
 
 export const followingRouter = express.Router()
 
@@ -36,11 +38,27 @@ followingRouter.post('/download-missing', async (_req, res) => {
     let queuedCount = 0
     for (const artist of Object.values(store.artists)) {
       if (!artist.missingReleaseCount) continue
-      for (const albumId of artist.knownReleaseIds || []) {
-        try {
-          await enqueueAlbum({ albumId })
-          queuedCount++
-        } catch {
+      
+      const catalog = await loadArtistCatalog({
+        artistId: artist.id,
+        storefront: artist.storefront || 'us',
+        language: 'en-US',
+      })
+      
+      if (!catalog?.albums) continue
+      
+      for (const album of catalog.albums) {
+        if (!album.artistName || !album.name) continue
+        if (!(await hasAlbumInLibrary(album.artistName, album.name, libIndex))) {
+          try {
+            await enqueueAlbum({ 
+              albumId: album.id, 
+              storefront: artist.storefront,
+              expectedArtistId: artist.id 
+            })
+            queuedCount++
+          } catch {
+          }
         }
       }
     }
@@ -61,11 +79,26 @@ followingRouter.post('/:id/download-missing', async (req, res) => {
     const libIndex = await scanLibraryOnce()
     let queuedCount = 0
     if (artist.missingReleaseCount > 0) {
-      for (const albumId of artist.knownReleaseIds || []) {
-        try {
-          await enqueueAlbum({ albumId })
-          queuedCount++
-        } catch {
+      const catalog = await loadArtistCatalog({
+        artistId: id,
+        storefront: artist.storefront || 'us',
+        language: 'en-US',
+      })
+
+      if (catalog?.albums) {
+        for (const album of catalog.albums) {
+          if (!album.artistName || !album.name) continue
+          if (!(await hasAlbumInLibrary(album.artistName, album.name, libIndex))) {
+            try {
+              await enqueueAlbum({ 
+                albumId: album.id, 
+                storefront: artist.storefront,
+                expectedArtistId: artist.id 
+              })
+              queuedCount++
+            } catch {
+            }
+          }
         }
       }
     }

@@ -65,6 +65,16 @@ type FollowingDownloadEvent = {
   error?: string
 }
 
+type WrapperStallEvent = {
+  jobId?: string
+  albumTitle?: string
+  currentTrack?: string | null
+  idleMs?: number
+  thresholdMs?: number
+  lastLine?: string
+  phase?: 'warning' | 'aborting'
+}
+
 const MAX_FEED_ITEMS = 120
 const MAX_TERMINAL_LINES = 600
 
@@ -246,6 +256,40 @@ export function useActivityFeed() {
         const event = data as FollowingDownloadEvent
         appendFeedItem(makeFollowingDownloadFeedItem(event, now, `following-download-feed-${nextId()}`))
         appendTerminalLine(makeFollowingDownloadLine(event, now, `following-download-event-${nextId()}`))
+        return
+      }
+
+      if (type === 'wrapper.stall.suspected') {
+        const event = data as WrapperStallEvent
+        const idleSec = Math.round((event.idleMs || 0) / 1000)
+        const aborting = event.phase === 'aborting'
+        const title = aborting
+          ? 'Wrapper stalled — aborting job'
+          : 'Wrapper appears stalled'
+        const detailParts = [
+          event.albumTitle && `${event.albumTitle}`,
+          event.currentTrack && `track: ${event.currentTrack}`,
+          `${idleSec}s without output`,
+          event.lastLine && `last: ${event.lastLine.slice(0, 140)}`,
+        ].filter(Boolean) as string[]
+        appendFeedItem({
+          id: `wrapper-stall-feed-${nextId()}`,
+          ts: now,
+          source: 'wrapper',
+          severity: aborting ? 'error' : 'warning',
+          title,
+          detail: detailParts.join(' · '),
+          jobId: event.jobId,
+        })
+        appendTerminalLine({
+          id: `wrapper-stall-event-${nextId()}`,
+          ts: now,
+          source: 'wrapper',
+          severity: aborting ? 'error' : 'warning',
+          text: `[wrapper] ${title}${detailParts.length ? ` · ${detailParts.join(' · ')}` : ''}`,
+          channel: 'event',
+          jobId: event.jobId,
+        })
       }
     },
     {

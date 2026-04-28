@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CheckCircle2, Clock, RefreshCw, UserRoundCheck, X } from 'lucide-react'
+import { CheckCircle2, Clock, RefreshCw, UserRoundCheck, X, Loader2 } from 'lucide-react'
 
 import { api, artworkUrl, type FollowedArtist, type Job } from '../api/client'
 import { Badge } from '../components/Badge'
@@ -17,6 +17,7 @@ export function FollowingPage() {
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [queuedCount, setQueuedCount] = useState(0)
+  const activeJobsTotal = jobs.filter((j) => j.status === 'queued' || j.status === 'running').length
 
   const reload = () => {
     setLoading(true)
@@ -103,11 +104,28 @@ export function FollowingPage() {
             <RefreshCw className={checking ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
             {checking ? 'Checking…' : 'Check now'}
           </Button>
-          <Button disabled={checking || loading} className="bg-[rgba(var(--accent),0.12)] border-[rgba(var(--accent),0.3)] text-white hover:bg-[rgba(var(--accent),0.2)]" onClick={() => {
-            api.downloadMissingReleases().then((res) => { setQueuedCount(res.queued) }).catch((err: any) => setError(err.message || 'Failed to download missing releases'))
-          }}>
-            Download all previous discography
-          </Button>
+          <motion.button
+            layout
+            type="button"
+            disabled={checking || loading || activeJobsTotal > 0}
+            className={`inline-flex h-9 items-center justify-center gap-2 overflow-hidden rounded-full px-4 text-sm font-medium transition-[background-color,border-color,color] duration-300 ease-snappy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent),0.5)] focus-visible:ring-offset-2 ${
+              activeJobsTotal > 0
+                ? "border border-[rgba(var(--accent),0.25)] bg-[rgba(var(--accent),0.08)] text-[rgb(var(--accent))]"
+                : "border border-[rgba(var(--accent),0.3)] bg-[rgba(var(--accent),0.12)] text-white hover:bg-[rgba(var(--accent),0.2)] disabled:opacity-50"
+            }`}
+            onClick={() => {
+              api.downloadMissingReleases().then((res) => { setQueuedCount(res.queued) }).catch((err: any) => setError(err.message || 'Failed to download missing releases'))
+            }}
+          >
+            {activeJobsTotal > 0 ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <motion.span layout="position">Downloading...</motion.span>
+              </>
+            ) : (
+              <motion.span layout="position">Download all previous discography</motion.span>
+            )}
+          </motion.button>
         </div>
       </section>
 
@@ -143,7 +161,6 @@ export function FollowingPage() {
                   artist={artist}
                   jobs={jobs}
                   onUnfollow={() => unfollow(artist.id)}
-                  onQueued={(q) => setQueuedCount(q)}
                 />
               </StaggeredItem>
             ))}
@@ -158,22 +175,32 @@ function ArtistFollowCard({
   artist,
   jobs,
   onUnfollow,
-  onQueued,
 }: {
   artist: FollowedArtist
   jobs: Job[]
   onUnfollow: () => void
-  onQueued: (queued: number) => void
 }) {
+  const [initialDone] = useState(() => new Set(jobs.filter((j) => j.status === 'done').map((j) => j.id)))
+
   const artistJobs = useMemo(() => {
-    return jobs.filter((j) => j.artistId === artist.id)
+    const map = new Map<string, Job>()
+    for (const j of jobs) {
+      if (j.artistId === artist.id && j.kind === 'album' && j.albumId) {
+        map.set(j.albumId, j)
+      }
+    }
+    return Array.from(map.values())
   }, [jobs, artist.id])
 
   const activeJobs = artistJobs.filter((j) => j.status === 'queued' || j.status === 'running')
   const finishedJobs = artistJobs.filter((j) => j.status === 'done' || j.status === 'failed')
+  const sessionDoneJobsCount = artistJobs.filter((j) => j.status === 'done' && !initialDone.has(j.id)).length
   const totalJobs = activeJobs.length + finishedJobs.length
   const isDownloading = activeJobs.length > 0
   const progressPercent = totalJobs > 0 ? (finishedJobs.length / totalJobs) * 100 : 0
+
+  const displayMissingCount = Math.max(0, artist.missingReleaseCount - sessionDoneJobsCount)
+  const isFullyDownloaded = artist.totalReleaseCount > 0 && displayMissingCount === 0
 
   const art = artworkUrl(artist.artworkTemplate, 300)
   return (
@@ -202,14 +229,14 @@ function ArtistFollowCard({
                 {artist.name}
               </Link>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {artist.fullyDownloaded ? (
+                {isFullyDownloaded ? (
                   <Badge variant="ok">
                     <CheckCircle2 className="h-3 w-3" />
                     Complete
                   </Badge>
                 ) : (
                   <Badge variant="warn">
-                    {artist.missingReleaseCount} missing
+                    {displayMissingCount} missing
                   </Badge>
                 )}
                 <Badge>{artist.totalReleaseCount} releases</Badge>
@@ -240,14 +267,14 @@ function ArtistFollowCard({
                   </div>
                   <span>{finishedJobs.length}/{totalJobs}</span>
                 </div>
-              ) : artist.missingReleaseCount > 0 ? (
+              ) : displayMissingCount > 0 ? (
                 <button
                   type="button"
                   onClick={async () => {
                     try {
-                      const res = await api.downloadArtistMissingReleases(artist.id)
-                      onQueued(res.queued)
+                      await api.downloadArtistMissingReleases(artist.id)
                     } catch (err) {
+                      console.error(err)
                     }
                   }}
                   className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-3 text-xs font-medium text-white/65 transition-colors hover:border-[rgba(var(--accent),0.3)] hover:bg-[rgba(var(--accent),0.12)] hover:text-white"
