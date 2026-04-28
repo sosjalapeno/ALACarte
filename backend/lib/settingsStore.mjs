@@ -31,11 +31,18 @@ const DEFAULTS = {
   navidromeUser: null,
   navidromePassword: null,
   autoDownloadsEnabled: true,
-  autoDownloadCheckFrequency: 'daily',
+  autoDownloadCheckFrequency: 'auto',
 }
 
 const QUALITY_VALUES = new Set(['flac', 'alac', 'atmos', 'aac'])
-const AUTO_DOWNLOAD_FREQUENCY_VALUES = new Set(['12h', 'daily', 'weekly'])
+export const AUTO_DOWNLOAD_FREQUENCY_VALUES = new Set([
+  'auto',
+  '1h',
+  '6h',
+  '12h',
+  'daily',
+  'weekly',
+])
 
 export async function ensureConfigDir(dir = CONFIG_DIR) {
   await fsp.mkdir(dir, { recursive: true, mode: 0o750 })

@@ -164,7 +164,6 @@ export type AutoCheckFrequency =
   | '12h'
   | 'daily'
   | 'weekly'
-  | 'manual'
 
 export type EffectiveCheckInterval = {
   mode: AutoCheckFrequency

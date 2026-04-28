@@ -17,10 +17,6 @@ test('fixed frequencies map to correct millisecond values', () => {
   assert.equal(resolveIntervalMs('weekly', 5), FIXED_INTERVAL_MS.weekly)
 })
 
-test('manual mode returns +Infinity (no auto checks)', () => {
-  assert.equal(resolveIntervalMs('manual', 5), Number.POSITIVE_INFINITY)
-})
-
 test('auto frequency clamps to MIN at small followed counts', () => {
   assert.equal(autoIntervalMs(0), AUTO_LIMITS.MIN_AUTO_INTERVAL)
   assert.equal(autoIntervalMs(1), AUTO_LIMITS.MIN_AUTO_INTERVAL)

@@ -16,7 +16,6 @@ export const FREQUENCY_VALUES = new Set([
   '12h',
   'daily',
   'weekly',
-  'manual',
 ])
 
 const DAILY_BUDGET = Math.max(50, Number(process.env.AMDL_FOLLOW_DAILY_BUDGET) || 300)
@@ -30,7 +29,6 @@ export function autoIntervalMs(followedCount) {
 }
 
 export function resolveIntervalMs(frequency, followedCount) {
-  if (frequency === 'manual') return Number.POSITIVE_INFINITY
   if (frequency === 'auto') return autoIntervalMs(followedCount)
   if (FIXED_INTERVAL_MS[frequency]) return FIXED_INTERVAL_MS[frequency]
   return DAY

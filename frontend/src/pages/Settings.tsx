@@ -91,7 +91,6 @@ const AUTO_DOWNLOAD_FREQUENCY_OPTIONS: Array<{
   { value: '12h', label: 'Every 12 hours' },
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
-  { value: 'manual', label: 'Manual only' },
 ]
 
 export function SettingsPage() {
@@ -431,13 +430,6 @@ function EffectiveIntervalHint({
     }
   }, [mode])
   if (!data) return null
-  if (mode === 'manual') {
-    return (
-      <p className="mt-2 text-xs text-white/45">
-        Auto checks disabled. Use the Check now button on the Following page.
-      </p>
-    )
-  }
   if (mode === 'auto') {
     return (
       <p className="mt-2 text-xs text-white/45">
