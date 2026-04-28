@@ -104,8 +104,8 @@ export function spawnAmdp({ args, cwd, onLine, signal }) {
     if (!line) return
     try {
       onLine?.({ line, which })
-    } catch {
-      /* ignore listener errors */
+    } catch (err) {
+      console.error('amdp onLine handler threw', err)
     }
   }
 

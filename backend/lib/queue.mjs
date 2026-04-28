@@ -934,11 +934,31 @@ async function runAmdpDownload({ job, jobStaging, url, quality, isSong, progress
 
   let lastLineAt = Date.now()
   let lastLine = ''
+  let firstLineSeen = false
+  const startedAt = Date.now()
   let warnFired = false
   let stallReason = null
   const watchdog = setInterval(() => {
     if (stallReason) return
     const idleMs = Date.now() - lastLineAt
+    if (!firstLineSeen && Date.now() - startedAt >= FIRST_LINE_TIMEOUT_MS) {
+      stallReason = `wrapper produced no output within ${Math.round(FIRST_LINE_TIMEOUT_MS / 1000)}s`
+      emitEvent('wrapper.stall.suspected', {
+        jobId: job.id,
+        albumTitle: job.albumTitle,
+        currentTrack: job.currentTrack || null,
+        idleMs,
+        thresholdMs: FIRST_LINE_TIMEOUT_MS,
+        lastLine,
+        phase: 'aborting',
+      })
+      try {
+        ctl.abort()
+      } catch {
+        /* ignore */
+      }
+      return
+    }
     if (idleMs >= STALL_TIMEOUT_MS) {
       stallReason = `wrapper stalled (no output for ${Math.round(idleMs / 1000)}s)`
       emitEvent('wrapper.stall.suspected', {
