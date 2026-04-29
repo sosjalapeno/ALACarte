@@ -17,6 +17,7 @@ import { libraryRouter } from './routes/library.mjs'
 import { authRouter } from './routes/auth.mjs'
 import { playlistRouter } from './routes/playlist.mjs'
 import { followingRouter } from './routes/following.mjs'
+import { cloudLibraryRouter } from './routes/cloudLibrary.mjs'
 import { ensureConfigDir } from './lib/settingsStore.mjs'
 import { loadSecretsAtBoot } from './lib/secretKey.mjs'
 import { originGuard } from './lib/originGuard.mjs'
@@ -106,6 +107,7 @@ app.use('/api/events', eventsRouter)
 app.use('/api/library', libraryRouter)
 app.use('/api/playlist', playlistRouter)
 app.use('/api/following', followingRouter)
+app.use('/api/cloud-library', cloudLibraryRouter)
 
 startAutoDownloadScheduler()
 

@@ -212,6 +212,81 @@ export type LibraryAlbum = {
   addedAt?: number
 }
 
+export type CloudLibraryAlbum = {
+  libraryId: string
+  catalogId: string | null
+  name: string
+  artistName: string
+  artworkTemplate: string | null
+  artworkColor?: string | null
+  trackCount: number
+  dateAdded: string | null
+  downloadable: boolean
+}
+
+export type CloudLibraryPlaylist = {
+  libraryId: string
+  catalogId: string | null
+  name: string
+  curatorName: string
+  description?: string
+  artworkTemplate: string | null
+  artworkColor?: string | null
+  dateAdded: string | null
+  isUserCreated: boolean
+  downloadable: boolean
+}
+
+export type CloudLibrarySong = {
+  libraryId: string
+  catalogId: string | null
+  catalogAlbumId: string | null
+  name: string
+  artistName: string
+  albumName: string
+  durationMs: number
+  artworkTemplate: string | null
+  contentRating: string | null
+  downloadable: boolean
+}
+
+export type CloudLibraryKind = 'albums' | 'playlists' | 'songs'
+
+export type CloudLibraryHealth = {
+  available: boolean
+  storefront?: string
+  reason?: 'no-media-user-token' | 'token-rejected' | 'probe-failed'
+  error?: string
+}
+
+export type CloudLibraryPage<T> = {
+  items: T[]
+  next: number | null
+  total: number | null
+}
+
+export type CloudDownloadAllResult = {
+  ok: true
+  kind: CloudLibraryKind
+  scanned: number
+  queued: number
+  skippedExisting: number
+  skippedQueued: number
+  unsupported: number
+  errorCount: number
+  errors: Array<{ libraryId: string; name: string; error: string }>
+}
+
+export type CloudDownloadAllProgress = {
+  kind: CloudLibraryKind
+  scanned: number
+  queued: number
+  skippedExisting?: number
+  unsupported?: number
+  total?: number | null
+  done: boolean
+}
+
 type UnauthorizedHandler = (info: { needsSetup: boolean }) => void
 
 let onUnauthorized: UnauthorizedHandler | null = null
@@ -500,6 +575,25 @@ export const api = {
   cancel: (id: string) =>
     http<{ ok: boolean }>(`/api/download/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    }),
+  cloudLibraryHealth: () =>
+    http<CloudLibraryHealth>('/api/cloud-library/health'),
+  cloudLibraryAlbums: (offset = 0, limit = 100) =>
+    http<CloudLibraryPage<CloudLibraryAlbum>>(
+      `/api/cloud-library/albums?offset=${offset}&limit=${limit}`,
+    ),
+  cloudLibraryPlaylists: (offset = 0, limit = 100) =>
+    http<CloudLibraryPage<CloudLibraryPlaylist>>(
+      `/api/cloud-library/playlists?offset=${offset}&limit=${limit}`,
+    ),
+  cloudLibrarySongs: (offset = 0, limit = 100) =>
+    http<CloudLibraryPage<CloudLibrarySong>>(
+      `/api/cloud-library/songs?offset=${offset}&limit=${limit}`,
+    ),
+  cloudLibraryDownloadAll: (kind: CloudLibraryKind) =>
+    http<CloudDownloadAllResult>('/api/cloud-library/download-all', {
+      method: 'POST',
+      body: JSON.stringify({ kind }),
     }),
 }
 
