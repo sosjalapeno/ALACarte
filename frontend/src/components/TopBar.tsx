@@ -25,10 +25,11 @@ export function TopBar({ health, loading }: Props) {
   const isAlbum = location.pathname.startsWith('/album/')
   const isPlaylist = location.pathname.startsWith('/playlist/')
   const isFollowing = location.pathname === '/following'
+  const isCloud = location.pathname === '/cloud-library'
   const isStatus = location.pathname === '/status'
   const isSettings = location.pathname === '/settings'
   const showHomeShortcut =
-    isSearch || isArtist || isStatus || isSettings || isAlbum || isPlaylist || isFollowing
+    isSearch || isArtist || isStatus || isSettings || isAlbum || isPlaylist || isFollowing || isCloud
   const showCenterPill =
     location.pathname === '/' || location.pathname === '/library'
   const pageTitle =
@@ -40,7 +41,9 @@ export function TopBar({ health, loading }: Props) {
           ? 'Settings'
           : location.pathname === '/following'
             ? 'Following'
-            : location.pathname.startsWith('/album/')
+            : location.pathname === '/cloud-library'
+              ? 'Cloud'
+              : location.pathname.startsWith('/album/')
               ? 'Album'
               : location.pathname.startsWith('/artist/')
                 ? 'Artist'
