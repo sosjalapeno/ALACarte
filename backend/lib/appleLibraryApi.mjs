@@ -58,6 +58,9 @@ function buildLibraryUrl(kind, { offset = 0, limit = LIBRARY_PAGE_SIZE, language
     offset: String(Math.max(0, offset)),
     l: language,
   })
+  if (kind === 'songs') {
+    qs.set('include[songs]', 'albums')
+  }
   return `${ME}/library/${kind}?${qs.toString()}`
 }
 

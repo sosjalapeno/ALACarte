@@ -98,6 +98,11 @@ export function CloudLibraryPage() {
   } | null>(null)
 
   const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const inFlightRef = useRef<Record<TabKey, Set<number>>>({
+    albums: new Set(),
+    playlists: new Set(),
+    songs: new Set(),
+  })
 
   const checkHealth = useCallback(async () => {
     setHealthLoading(true)
@@ -122,6 +127,9 @@ export function CloudLibraryPage() {
         limit?: number,
       ) => Promise<{ items: AnyItem[]; next: number | null; total: number | null }>
       const offset = mode === 'reset' ? 0 : tabs[kind].next ?? 0
+      const inflight = inFlightRef.current[kind]
+      if (inflight.has(offset)) return
+      inflight.add(offset)
       setTabs((prev) => ({
         ...prev,
         [kind]: {
@@ -159,6 +167,8 @@ export function CloudLibraryPage() {
             error: err?.message || 'Failed to load',
           },
         }))
+      } finally {
+        inflight.delete(offset)
       }
     },
     [tabs],
@@ -293,7 +303,7 @@ export function CloudLibraryPage() {
       <section className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
           <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
-            Cloud Library
+            Cloud
           </h1>
           <p className="max-w-2xl text-sm text-white/60 md:text-base">
             Everything saved in your Apple Music library — download what you want, or grab the lot in one go.
