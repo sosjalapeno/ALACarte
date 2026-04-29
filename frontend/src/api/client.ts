@@ -562,10 +562,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ albumId, quality }),
     }),
-  enqueueSong: (songId: string, albumId: string, storefront?: string) =>
+  enqueueSong: (songId: string, albumId?: string | null, storefront?: string) =>
     http<{ job: Job }>('/api/download/song', {
       method: 'POST',
-      body: JSON.stringify({ songId, albumId, storefront }),
+      body: JSON.stringify({ songId, albumId: albumId || null, storefront }),
     }),
   enqueuePlaylist: (playlistId: string, storefront?: string, quality?: QualityPreference) =>
     http<{ job: Job }>('/api/download/playlist', {

@@ -62,6 +62,15 @@ export async function getAlbum({ storefront, id, language = 'en-US' }) {
   return apiGet(url, { language })
 }
 
+export async function getSong({ storefront, id, language = 'en-US' }) {
+  const qs = new URLSearchParams({
+    include: 'albums,artists',
+    l: language,
+  })
+  const url = `${BASE}/${encodeURIComponent(storefront)}/songs/${encodeURIComponent(id)}?${qs.toString()}`
+  return apiGet(url, { language })
+}
+
 export async function getArtist({ storefront, id, language = 'en-US' }) {
   const qs = new URLSearchParams({
     include: 'albums',

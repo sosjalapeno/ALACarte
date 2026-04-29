@@ -132,7 +132,7 @@ export function normalizeLibrarySong(raw, albumLookup) {
     durationMs: Number(a.durationInMillis || 0),
     artworkTemplate: a.artwork?.url || null,
     contentRating: a.contentRating || null,
-    downloadable: Boolean(catalogId && catalogAlbumId),
+    downloadable: Boolean(catalogId),
   }
 }
 

@@ -118,13 +118,9 @@ async function enqueueByKind(kind, item, { storefront, quality }) {
     return { job }
   }
   if (kind === 'songs') {
-    const albumId = item.catalogAlbumId || ''
-    if (!albumId) {
-      return { skipped: 'no-album-context' }
-    }
     const job = await enqueueSong({
       songId: item.catalogId,
-      albumId,
+      albumId: item.catalogAlbumId || null,
       storefront,
     })
     return { job }

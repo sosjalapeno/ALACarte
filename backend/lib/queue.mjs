@@ -9,6 +9,7 @@ import { readSettings, readAppleCreds } from './settingsStore.mjs'
 import {
   getAlbum,
   getPlaylist,
+  getSong,
   normalizeAlbum,
   normalizePlaylist,
 } from './appleApi.mjs'
@@ -321,7 +322,6 @@ export async function enqueuePlaylist({ playlistId, storefront, quality }) {
 
 export async function enqueueSong({ songId, albumId, storefront }) {
   if (!songId) throw new Error('songId required')
-  if (!albumId) throw new Error('albumId required')
 
   for (const j of state.jobs.values()) {
     if (
@@ -335,12 +335,28 @@ export async function enqueueSong({ songId, albumId, storefront }) {
 
   const id = crypto.randomUUID()
   const settings = await readSettings()
+  const sf = storefront || settings.storefront
+  let resolvedAlbumId = albumId || null
+  if (!resolvedAlbumId) {
+    try {
+      const raw = await getSong({ storefront: sf, id: songId, language: settings.language })
+      const songData = raw?.data?.[0]
+      const albumRel = songData?.relationships?.albums?.data?.[0]?.id
+      if (albumRel) resolvedAlbumId = String(albumRel)
+    } catch (err) {
+      console.error('song catalog lookup failed', err.message)
+    }
+    if (!resolvedAlbumId) {
+      throw new Error('Could not resolve parent album for song')
+    }
+  }
+
   let meta = null
   let trackMeta = null
   try {
     const raw = await getAlbum({
-      storefront: storefront || settings.storefront,
-      id: albumId,
+      storefront: sf,
+      id: resolvedAlbumId,
       language: settings.language,
     })
     meta = normalizeAlbum(raw?.data?.[0])
@@ -366,7 +382,7 @@ export async function enqueueSong({ songId, albumId, storefront }) {
     kind: 'song',
     status: 'queued',
     progress: 0,
-    albumId,
+    albumId: resolvedAlbumId,
     songId,
     albumTitle: trackName,
     artist: meta?.artistName || 'Unknown artist',

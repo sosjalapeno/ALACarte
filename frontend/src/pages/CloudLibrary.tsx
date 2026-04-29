@@ -34,6 +34,7 @@ import { DownloadButton } from '../components/DownloadButton'
 import { Modal } from '../components/Modal'
 import { StaggeredItem, StaggeredList } from '../components/StaggeredList'
 import { useEventStream } from '../hooks/useEventStream'
+import { useLibraryPresence } from '../hooks/useLibraryPresence'
 import { useQueue } from '../hooks/useQueue'
 import { cx } from '../lib/cx'
 
@@ -619,6 +620,8 @@ function SongList({ items }: { items: CloudLibrarySong[] }) {
 
 function CloudSongRow({ song }: { song: CloudLibrarySong }) {
   const { jobs } = useQueue()
+  const { isAlbumInLibrary, isSongInLibrary, verifySongPresence, verifyAlbumPresence, ready } =
+    useLibraryPresence()
   const matching = useMemo(() => {
     if (!song.catalogId) return null
     return (
@@ -644,6 +647,18 @@ function CloudSongRow({ song }: { song: CloudLibrarySong }) {
     artworkTemplate: song.artworkTemplate,
   }
 
+  const songLookup = {
+    id: song.catalogId || song.libraryId,
+    name: song.name,
+    artistName: song.artistName,
+    albumName: song.albumName,
+  }
+  const albumLookup = song.albumName
+    ? { id: albumCatalog || '', artistName: song.artistName, name: song.albumName }
+    : null
+  const alreadyInLibrary =
+    isSongInLibrary(songLookup) || (albumLookup ? isAlbumInLibrary(albumLookup) : false)
+
   return (
     <Card hover className="group relative flex items-center gap-3 p-2">
       <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-black/50">
@@ -666,14 +681,26 @@ function CloudSongRow({ song }: { song: CloudLibrarySong }) {
           {song.albumName ? ` · ${song.albumName}` : ''}
         </div>
       </div>
-      {song.downloadable && song.catalogId && albumCatalog ? (
+      {!song.catalogId ? (
+        <div className="shrink-0 pr-1">
+          <Badge>Uploaded</Badge>
+        </div>
+      ) : alreadyInLibrary ? (
+        <div className="shrink-0 pr-1">
+          <Badge variant="ok">In library</Badge>
+        </div>
+      ) : (
         <div className="shrink-0 pr-1">
           <DownloadButton
             size="sm"
             job={matching}
             onStart={async () => {
+              if (!ready) {
+                if (await verifySongPresence(songLookup)) return false
+                if (albumLookup && (await verifyAlbumPresence(albumLookup))) return false
+              }
               try {
-                await api.enqueueSong(song.catalogId!, albumCatalog!)
+                await api.enqueueSong(song.catalogId!, albumCatalog || null)
                 return true
               } catch (err: any) {
                 if (/already in library/i.test(String(err?.message || ''))) return false
@@ -682,10 +709,6 @@ function CloudSongRow({ song }: { song: CloudLibrarySong }) {
             }}
             ariaLabel={`Download ${song.name}`}
           />
-        </div>
-      ) : (
-        <div className="shrink-0 pr-1">
-          <Badge>Uploaded</Badge>
         </div>
       )}
     </Card>

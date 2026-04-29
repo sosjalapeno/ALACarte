@@ -77,7 +77,7 @@ test('normalizeLibraryPlaylist captures catalog id for subscribed playlists', ()
   assert.equal(out.downloadable, true)
 })
 
-test('normalizeLibrarySong is downloadable only when album lookup resolves the catalog album id', () => {
+test('normalizeLibrarySong is downloadable when catalogId is present, with album hint when available', () => {
   const lookup = new Map([['12345', '99999']])
   const downloadable = normalizeLibrarySong(
     {
@@ -96,6 +96,21 @@ test('normalizeLibrarySong is downloadable only when album lookup resolves the c
   assert.equal(downloadable.catalogAlbumId, '99999')
   assert.equal(downloadable.durationMs, 273000)
   assert.equal(downloadable.downloadable, true)
+
+  const albumless = normalizeLibrarySong(
+    {
+      id: 'l.song2',
+      attributes: {
+        name: 'Loose Track',
+        artistName: 'Someone',
+        playParams: { catalogId: '67890' },
+      },
+    },
+    new Map(),
+  )
+  assert.equal(albumless.catalogId, '67890')
+  assert.equal(albumless.catalogAlbumId, null)
+  assert.equal(albumless.downloadable, true)
 
   const orphan = normalizeLibrarySong(
     {
