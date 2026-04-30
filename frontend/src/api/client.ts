@@ -239,6 +239,17 @@ export type LibraryAlbum = {
   addedAt?: number
 }
 
+export type LibraryPlaylist = {
+  id: string
+  relPath: string
+  fileName: string
+  playlistName: string
+  catalogPlaylistId: string | null
+  libraryPlaylistId: string | null
+  trackCount: number
+  addedAt?: number
+}
+
 export type CloudLibraryAlbum = {
   libraryId: string
   catalogId: string | null
@@ -566,6 +577,7 @@ export const api = {
     http<{
       albums: LibraryAlbum[]
       singles: LibrarySingle[]
+      playlists: LibraryPlaylist[]
       songKeys?: string[]
       playlistIds?: string[]
       totals: { albums: number; singles: number; playlists?: number }
@@ -606,6 +618,11 @@ export const api = {
     }),
   deleteLibraryAlbum: (relPath: string) =>
     http<{ ok: boolean }>('/api/library/album', {
+      method: 'DELETE',
+      body: JSON.stringify({ relPath }),
+    }),
+  deleteLibraryPlaylist: (relPath: string) =>
+    http<{ ok: boolean }>('/api/library/playlist', {
       method: 'DELETE',
       body: JSON.stringify({ relPath }),
     }),

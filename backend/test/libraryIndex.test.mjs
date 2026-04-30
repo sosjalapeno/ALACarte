@@ -124,6 +124,10 @@ test('scanLibrary registers both catalog and library ids written into a playlist
     const idx = await mod.scanLibrary()
     assert.ok(idx.playlistIds.has('pl.abcdef0123456789'))
     assert.ok(idx.playlistIds.has('p.userlist'))
+    assert.equal(idx.playlists?.length || 0, 1)
+    assert.equal(idx.playlists[0].playlistName, 'My Mix')
+    assert.equal(idx.playlists[0].relPath.startsWith('Playlists/'), true)
+    assert.equal(idx.playlists[0].trackCount, 1)
     assert.equal(await mod.isPlaylistInLibrary('pl.abcdef0123456789', idx), true)
     assert.equal(await mod.isPlaylistInLibrary('p.userlist', idx), true)
     assert.equal(await mod.isPlaylistInLibrary('something-else', idx), false)
@@ -146,5 +150,79 @@ test('getAlbumTrackPresence still counts singles regardless of album folder', as
     assert.equal(presence.expected, 2)
     assert.equal(presence.complete, false)
     assert.equal(presence.folderExists, false)
+  })
+})
+
+test('parsePlaylistM3uText counts plain path entries and reads headers', async () => {
+  const mod = await import('../lib/libraryIndex.mjs')
+  const meta = mod.parsePlaylistM3uText(
+    ['#EXTM3U', '#PLAYLIST:X', '#ALACARTE_PLAYLIST_ID:abc', '../a.flac', '', 'b.flac'].join('\n'),
+  )
+  assert.equal(meta.playlistTitle, 'X')
+  assert.equal(meta.catalogPlaylistId, 'abc')
+  assert.equal(meta.libraryPlaylistId, null)
+  assert.equal(meta.trackCount, 2)
+})
+
+test('resolvePlaylistM3u8AbsPath resolves under Playlists only', async () => {
+  const mod = await import('../lib/libraryIndex.mjs')
+  const root = path.join(os.tmpdir(), 'test-music-root')
+  await fsp.mkdir(path.join(root, 'Playlists'), { recursive: true })
+  try {
+    const ok = mod.resolvePlaylistM3u8AbsPath(root, 'Playlists/Test.m3u8')
+    assert.ok(ok.includes(`Test.m3u8`))
+
+    assert.throws(() => mod.resolvePlaylistM3u8AbsPath(root, 'Artist/Album/track.flac'))
+    assert.throws(() => mod.resolvePlaylistM3u8AbsPath(root, '../../etc/passwd'))
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true })
+  }
+})
+
+test('purgePlaylistExportsSharingIds removes stale exports but keeps other ids', async () => {
+  await withMusicRoot(async (root, mod) => {
+    const playlistsDir = path.join(root, 'Playlists')
+    await fsp.mkdir(playlistsDir, { recursive: true })
+    const staleLines = ['#EXTM3U', '#ALACARTE_PLAYLIST_ID:z9', '../x.flac'].join('\n')
+    await fsp.writeFile(path.join(playlistsDir, 'Stale Copy.m3u8'), staleLines + '\n')
+    await fsp.writeFile(
+      path.join(playlistsDir, 'Other.m3u8'),
+      `#EXTM3U\n#ALACARTE_PLAYLIST_ID:other\nx.flac\n`,
+    )
+    const keepPath = path.join(playlistsDir, 'Canonical.m3u8')
+
+    await mod.purgePlaylistExportsSharingIds(root, {
+      playlistId: 'z9',
+      libraryPlaylistId: null,
+      keepAbsPath: keepPath,
+    })
+
+    const staleStill = await fsp.stat(path.join(playlistsDir, 'Stale Copy.m3u8')).catch(() => null)
+    assert.equal(staleStill, null)
+    const otherStill = await fsp
+      .stat(path.join(playlistsDir, 'Other.m3u8'))
+      .then(() => true)
+      .catch(() => false)
+    assert.equal(otherStill, true)
+  })
+})
+
+test('scanLibrary returns one playlist row per m3u8 with track counts', async () => {
+  await withMusicRoot(async (root, mod) => {
+    const playlistsDir = path.join(root, 'Playlists')
+    await fsp.mkdir(playlistsDir, { recursive: true })
+    await fsp.writeFile(
+      path.join(playlistsDir, 'One.m3u8'),
+      ['#EXTM3U', '#PLAYLIST:P', '../a.flac'].join('\n'),
+    )
+    await fsp.writeFile(
+      path.join(playlistsDir, 'Two.m3u8'),
+      ['#EXTM3U', '#PLAYLIST:Q', '../b.flac', '../c.flac'].join('\n'),
+    )
+    const idx = await mod.scanLibrary()
+    assert.equal(idx.playlists.length, 2)
+    const byName = new Map(idx.playlists.map((p) => [p.playlistName, p]))
+    assert.equal(byName.get('P')?.trackCount, 1)
+    assert.equal(byName.get('Q')?.trackCount, 2)
   })
 })

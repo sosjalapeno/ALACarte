@@ -27,7 +27,7 @@ import {
   resolveArtistDir,
   sanitizeSegment,
 } from './folderLayout.mjs'
-import { getAlbumTrackPresence, hasSongInLibrary, invalidateLibraryCache, isPlaylistInLibrary, stripTrailingYear } from './libraryIndex.mjs'
+import { getAlbumTrackPresence, hasSongInLibrary, invalidateLibraryCache, isPlaylistInLibrary, purgePlaylistExportsSharingIds, stripTrailingYear } from './libraryIndex.mjs'
 import { probeWrapperPorts } from './wrapperHealth.mjs'
 
 const MUSIC_ROOT = process.env.AMDL_MUSIC_PATH || '/music'
@@ -1674,6 +1674,13 @@ function detectAmdpRemuxError(output) {
 async function importPlaylistTracks({ job, jobStaging, onProgress }) {
   const candidates = await collectAudioFiles(jobStaging)
   const imported = []
+  const fromPlaylistJob = job?.kind === 'playlist'
+  let playlistTracksDir = null
+  if (fromPlaylistJob) {
+    const segment = sanitizeSegment(job.albumTitle || 'Playlist')
+    playlistTracksDir = path.join(MUSIC_ROOT, 'Playlists', segment)
+    await ensureDir(playlistTracksDir)
+  }
 
   for (let i = 0; i < candidates.length; i++) {
     const srcPath = candidates[i].path
@@ -1689,7 +1696,14 @@ async function importPlaylistTracks({ job, jobStaging, onProgress }) {
 
     let destDir
     let targetName = path.basename(srcPath)
-    if (albumName) {
+    if (fromPlaylistJob) {
+      destDir = playlistTracksDir
+      const ext = path.extname(srcPath)
+      const titled = sanitizeSegment(
+        tags.title || path.basename(srcPath, ext) || `track_${i + 1}`,
+      )
+      targetName = `${String(i + 1).padStart(3, '0')} ${titled}${ext}`
+    } else if (albumName) {
       destDir = await computeFinalDir(
         MUSIC_ROOT,
         artistName,
@@ -1829,6 +1843,12 @@ async function writePlaylistM3U({ playlistName, playlistId, libraryPlaylistId, t
   await ensureDir(playlistsDir)
   const base = sanitizeSegment(playlistName || 'Playlist')
   const filePath = path.join(playlistsDir, `${base}.m3u8`)
+
+  await purgePlaylistExportsSharingIds(MUSIC_ROOT, {
+    playlistId,
+    libraryPlaylistId,
+    keepAbsPath: filePath,
+  })
 
   const lines = ['#EXTM3U', `#PLAYLIST:${playlistName || 'Playlist'}`]
   if (playlistId) {

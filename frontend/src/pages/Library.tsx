@@ -9,9 +9,10 @@ import {
   AlertCircle,
   Search,
   ListFilter,
+  ListOrdered,
 } from 'lucide-react'
 
-import { api, type LibraryAlbum, type LibrarySingle } from '../api/client'
+import { api, type LibraryAlbum, type LibraryPlaylist, type LibrarySingle } from '../api/client'
 import { Card } from '../components/Card'
 import { Badge } from '../components/Badge'
 import { Button } from '../components/Button'
@@ -26,6 +27,7 @@ type BusyMap = Record<string, boolean>
 type DeleteTarget =
   | { kind: 'album'; item: LibraryAlbum }
   | { kind: 'song'; item: LibrarySingle }
+  | { kind: 'playlist'; item: LibraryPlaylist }
   | null
 
 type LibrarySort = 'date-desc' | 'date-asc' | 'name' | 'artist'
@@ -91,6 +93,7 @@ function SkeletonCard() {
 export function LibraryPage() {
   const [albums, setAlbums] = useState<LibraryAlbum[]>([])
   const [singles, setSingles] = useState<LibrarySingle[]>([])
+  const [playlists, setPlaylists] = useState<LibraryPlaylist[]>([])
   const [sortBy, setSortBy] = useState<LibrarySort>('date-desc')
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
@@ -106,6 +109,7 @@ export function LibraryPage() {
       const r = await api.library()
       setAlbums(r.albums)
       setSingles(r.singles)
+      setPlaylists(r.playlists || [])
       if (syncPresence) await refreshLibraryPresence()
     } catch (err: any) {
       setError(err?.message || 'Failed to load library')
@@ -122,9 +126,10 @@ export function LibraryPage() {
     () => ({
       albums: albums.length,
       singles: singles.length,
+      playlists: playlists.length,
       lyrics: singles.filter((s) => s.hasLyrics).length,
     }),
-    [albums, singles],
+    [albums, singles, playlists],
   )
 
   const normalizedQuery = useMemo(() => query.trim().toLowerCase(), [query])
@@ -155,12 +160,44 @@ export function LibraryPage() {
     )
   }, [singles, normalizedQuery, sortBy])
 
+  const visiblePlaylists = useMemo(() => {
+    const filtered = playlists.filter((p) =>
+      matchesQuery(
+        normalizedQuery,
+        p.playlistName,
+        p.fileName,
+        p.relPath,
+        p.catalogPlaylistId ?? undefined,
+        p.libraryPlaylistId ?? undefined,
+      ),
+    )
+    return [...filtered].sort((a, b) =>
+      compareLibraryItems(
+        sortBy,
+        {
+          name: a.playlistName,
+          artist: a.fileName,
+          addedAt: a.addedAt,
+        },
+        {
+          name: b.playlistName,
+          artist: b.fileName,
+          addedAt: b.addedAt,
+        },
+      ),
+    )
+  }, [playlists, normalizedQuery, sortBy])
+
   const removeSong = (item: LibrarySingle) => {
     setDeleteTarget({ kind: 'song', item })
   }
 
   const removeAlbum = (item: LibraryAlbum) => {
     setDeleteTarget({ kind: 'album', item })
+  }
+
+  const removePlaylist = (item: LibraryPlaylist) => {
+    setDeleteTarget({ kind: 'playlist', item })
   }
 
   const closeDeleteModal = () => {
@@ -179,16 +216,20 @@ export function LibraryPage() {
 
     if (target.kind === 'album') {
       setAlbums((prev) => prev.filter((x) => x.id !== target.item.id))
-    } else {
+    } else if (target.kind === 'song') {
       setSingles((prev) => prev.filter((x) => x.id !== target.item.id))
+    } else {
+      setPlaylists((prev) => prev.filter((x) => x.id !== target.item.id))
     }
 
     ;(async () => {
       try {
         if (target.kind === 'album') {
           await api.deleteLibraryAlbum(target.item.relPath)
-        } else {
+        } else if (target.kind === 'song') {
           await api.deleteLibrarySong(target.item.relPath)
+        } else {
+          await api.deleteLibraryPlaylist(target.item.relPath)
         }
         await refreshLibraryPresence()
       } catch (err: any) {
@@ -197,9 +238,13 @@ export function LibraryPage() {
           setAlbums((prev) =>
             prev.some((x) => x.id === target.item.id) ? prev : [...prev, target.item as LibraryAlbum],
           )
-        } else {
+        } else if (target.kind === 'song') {
           setSingles((prev) =>
             prev.some((x) => x.id === target.item.id) ? prev : [...prev, target.item as LibrarySingle],
+          )
+        } else {
+          setPlaylists((prev) =>
+            prev.some((x) => x.id === target.item.id) ? prev : [...prev, target.item as LibraryPlaylist],
           )
         }
       } finally {
@@ -217,8 +262,9 @@ export function LibraryPage() {
       <header className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm text-white/60">
-            {totals.albums} album{totals.albums === 1 ? '' : 's'} · {totals.singles}{' '}
-            single{totals.singles === 1 ? '' : 's'}
+            {totals.albums} album{totals.albums === 1 ? '' : 's'} · {totals.playlists} playlist
+            {totals.playlists === 1 ? '' : 's'} · {totals.singles} single
+            {totals.singles === 1 ? '' : 's'}
           </div>
           <Button onClick={() => load(true)}>
             <RefreshCw className="h-4 w-4" /> Refresh
@@ -367,6 +413,52 @@ export function LibraryPage() {
 
             <section>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-white/50 mb-3 flex items-center gap-2">
+                <ListOrdered className="h-4 w-4" /> Playlists
+              </h2>
+              {playlists.length === 0 ? (
+                <Card className="p-6 text-sm text-white/55">No playlists found.</Card>
+              ) : visiblePlaylists.length === 0 ? (
+                <Card className="p-6 text-sm text-white/55">No playlists match your filter.</Card>
+              ) : (
+                <StaggeredList className="flex flex-col gap-2">
+                  <AnimatePresence initial={false}>
+                    {visiblePlaylists.map((p) => (
+                      <motion.div
+                        key={p.id}
+                        layout="position"
+                        initial={{ opacity: 0, scale: 0.996 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.996 }}
+                        transition={{
+                          layout: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+                          opacity: { duration: 0.14, ease: 'easeOut' },
+                          scale: { duration: 0.2, ease: [0.22, 1, 0.36, 1] },
+                        }}
+                      >
+                        <Card hover className="flex items-center gap-3 p-3">
+                          <div className="h-10 w-10 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
+                            <ListOrdered className="h-5 w-5 text-white/65" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium truncate">{p.playlistName}</div>
+                            <div className="text-xs text-white/55 truncate">
+                              {p.trackCount} {p.trackCount === 1 ? 'entry' : 'entries'} · {p.fileName}
+                            </div>
+                          </div>
+                          <Button onClick={() => removePlaylist(p)} disabled={Boolean(busy[p.id])}>
+                            <Trash2 className="h-4 w-4" />
+                            {busy[p.id] ? 'Deleting…' : 'Delete'}
+                          </Button>
+                        </Card>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </StaggeredList>
+              )}
+            </section>
+
+            <section>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-white/50 mb-3 flex items-center gap-2">
                 <Music2 className="h-4 w-4" /> Singles
               </h2>
               {singles.length === 0 ? (
@@ -462,6 +554,17 @@ export function LibraryPage() {
               </h3>
               <p className="text-sm text-white/60">
                 This removes the song file and its lyrics sidecar from your library.
+              </p>
+            </>
+          ) : deleteTarget?.kind === 'playlist' ? (
+            <>
+              <h3 className="text-lg font-semibold leading-tight">
+                Delete playlist "{deleteTarget.item.playlistName}"?
+              </h3>
+              <p className="text-sm text-white/60">
+                Removes the .m3u8 file and the matching playlist audio folder under Playlists/. Older
+                imports that landed under artist/album folders are unchanged—delete those from Albums if
+                you still see them.
               </p>
             </>
           ) : null}

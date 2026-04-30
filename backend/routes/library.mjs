@@ -4,7 +4,16 @@ import path from 'node:path'
 
 import { searchCatalog } from '../lib/appleApi.mjs'
 import { emitEvent } from '../lib/eventBus.mjs'
-import { getAlbumTrackPresence, invalidateLibraryCache, makeAlbumKey, makeSongKey, scanLibrary, stripTrailingYear } from '../lib/libraryIndex.mjs'
+import {
+  getAlbumTrackPresence,
+  invalidateLibraryCache,
+  makeAlbumKey,
+  makeSongKey,
+  resolvePlaylistM3u8AbsPath,
+  scanLibrary,
+  stripTrailingYear,
+} from '../lib/libraryIndex.mjs'
+import { triggerNavidromeScan } from '../lib/navidromeApi.mjs'
 import { readSettings } from '../lib/settingsStore.mjs'
 
 export const libraryRouter = express.Router()
@@ -38,12 +47,13 @@ libraryRouter.get('/', async (_req, res) => {
     res.json({
       albums,
       singles,
+      playlists: index.playlists || [],
       songKeys: Array.from(index.songKeys || []),
       playlistIds: Array.from(index.playlistIds || []),
       totals: {
         albums: albums.length,
         singles: singles.length,
-        playlists: (index.playlistIds || new Set()).size,
+        playlists: (index.playlists || []).length,
       },
     })
   } catch (err) {
@@ -146,6 +156,44 @@ libraryRouter.delete('/song', async (req, res) => {
   } catch (err) {
     if (err.message === 'out of music root') {
       return res.status(400).json({ error: 'invalid path' })
+    }
+    return res.status(500).json({ error: err.message })
+  }
+})
+
+libraryRouter.delete('/playlist', async (req, res) => {
+  try {
+    const relPath = String(req.body?.relPath || '')
+    const absPath = resolvePlaylistM3u8AbsPath(MUSIC_ROOT, relPath)
+
+    await fsp.unlink(absPath)
+
+    const playlistsDir = path.dirname(absPath)
+    const stem = path.basename(absPath, path.extname(absPath))
+    const companionDir = path.join(playlistsDir, stem)
+    const dirStat = await fsp.stat(companionDir).catch(() => null)
+    if (dirStat?.isDirectory()) {
+      await fsp.rm(companionDir, { recursive: true, force: true })
+    }
+
+    invalidateLibraryCache()
+    emitEvent('library.changed', {
+      kind: 'playlist-deleted',
+      relPath: path.relative(MUSIC_ROOT, absPath).split(path.sep).join('/'),
+    })
+    triggerNavidromeScan().catch(console.error)
+
+    return res.json({ ok: true })
+  } catch (err) {
+    if (
+      err.message === 'invalid playlist path' ||
+      err.message === 'not an m3u8 file' ||
+      err.message === 'out of playlists directory'
+    ) {
+      return res.status(400).json({ error: err.message })
+    }
+    if (err.code === 'ENOENT') {
+      return res.status(404).json({ error: 'playlist not found' })
     }
     return res.status(500).json({ error: err.message })
   }

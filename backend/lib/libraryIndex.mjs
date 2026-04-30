@@ -35,16 +35,44 @@ export async function scanLibrary() {
   const albumTrackKeys = new Map()
   const singlesSongKeys = new Set()
   const playlistIds = new Set()
+  const playlists = []
 
   const playlistsDir = path.join(MUSIC_ROOT, 'Playlists')
   const playlistEntries = await readDirSafe(playlistsDir)
   for (const entry of playlistEntries) {
     if (!entry.isFile() || !/\.m3u8$/i.test(entry.name)) continue
-    const ids = await readPlaylistIds(path.join(playlistsDir, entry.name))
-    for (const id of ids) {
-      if (id) playlistIds.add(id)
-    }
+    const absPath = path.join(playlistsDir, entry.name)
+    const meta = await readPlaylistM3uFileMeta(absPath)
+    if (meta.catalogPlaylistId) playlistIds.add(meta.catalogPlaylistId)
+    if (meta.libraryPlaylistId) playlistIds.add(meta.libraryPlaylistId)
+    const relPath = toRel(absPath)
+    const fileStat = await fsp.stat(absPath).catch(() => null)
+    const addedAt = Math.round(
+      fileStat?.mtimeMs || fileStat?.ctimeMs || fileStat?.birthtimeMs || 0,
+    )
+    const displayName =
+      meta.playlistTitle ||
+      path.basename(entry.name, path.extname(entry.name)) ||
+      entry.name
+    playlists.push({
+      id: relPath,
+      relPath,
+      fileName: entry.name,
+      playlistName: displayName,
+      catalogPlaylistId: meta.catalogPlaylistId,
+      libraryPlaylistId: meta.libraryPlaylistId,
+      trackCount: meta.trackCount,
+      addedAt,
+    })
   }
+
+  playlists.sort((a, b) =>
+    `${a.playlistName}\u0000${a.relPath}`.localeCompare(
+      `${b.playlistName}\u0000${b.relPath}`,
+      undefined,
+      { sensitivity: 'base' },
+    ),
+  )
 
   const artists = await readDirSafe(MUSIC_ROOT)
   for (const artistEntry of artists) {
@@ -152,6 +180,7 @@ export async function scanLibrary() {
     albumTrackKeys,
     singlesSongKeys,
     playlistIds,
+    playlists,
   }
 }
 
@@ -165,26 +194,109 @@ export function songNameFromFilename(filename) {
   return base.trim()
 }
 
-async function readPlaylistIds(filePath) {
-  const ids = []
-  try {
-    const fh = await fsp.open(filePath, 'r')
-    try {
-      const buf = Buffer.alloc(2048)
-      const { bytesRead } = await fh.read(buf, 0, buf.length, 0)
-      const head = buf.subarray(0, bytesRead).toString('utf8')
-      const lines = head.split(/\r?\n/, 24)
-      for (const line of lines) {
-        const m = line.match(/^#ALACARTE_(?:LIBRARY_)?PLAYLIST_ID:(.+)$/)
-        if (m) ids.push(m[1].trim())
-      }
-    } finally {
-      await fh.close()
+export function parsePlaylistM3uText(text) {
+  const lines = String(text || '').split(/\r?\n/)
+  let playlistTitle = null
+  let catalogPlaylistId = null
+  let libraryPlaylistId = null
+  let trackCount = 0
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const extInf = trimmed.match(/^#EXTINF:/)
+    if (extInf) {
+      continue
     }
-  } catch {
-    return ids
+    if (trimmed.startsWith('#')) {
+      const playM = trimmed.match(/^#PLAYLIST:(.+)$/)
+      if (playM) {
+        playlistTitle = playM[1].trim()
+        continue
+      }
+      const catalogM = trimmed.match(/^#ALACARTE_PLAYLIST_ID:(.+)$/)
+      if (catalogM) {
+        catalogPlaylistId = catalogM[1].trim()
+        continue
+      }
+      const libM = trimmed.match(/^#ALACARTE_LIBRARY_PLAYLIST_ID:(.+)$/)
+      if (libM) {
+        libraryPlaylistId = libM[1].trim()
+        continue
+      }
+      continue
+    }
+    trackCount++
   }
-  return ids
+
+  return {
+    playlistTitle: playlistTitle || null,
+    catalogPlaylistId: catalogPlaylistId || null,
+    libraryPlaylistId: libraryPlaylistId || null,
+    trackCount,
+  }
+}
+
+async function readPlaylistM3uFileMeta(absPath) {
+  try {
+    const text = await fsp.readFile(absPath, 'utf8')
+    return parsePlaylistM3uText(text)
+  } catch {
+    return {
+      playlistTitle: null,
+      catalogPlaylistId: null,
+      libraryPlaylistId: null,
+      trackCount: 0,
+    }
+  }
+}
+
+export function resolvePlaylistM3u8AbsPath(musicRoot, relPath) {
+  const root = path.resolve(String(musicRoot || ''))
+  const playlistsRoot = path.join(root, 'Playlists')
+  const normalized = String(relPath || '')
+    .split(/[\\/]+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (normalized.length === 0) {
+    throw new Error('invalid playlist path')
+  }
+  if (normalized.some((p) => p.startsWith('.'))) {
+    throw new Error('invalid playlist path')
+  }
+  const abs = path.resolve(root, ...normalized)
+  if (!(abs === playlistsRoot || abs.startsWith(`${playlistsRoot}${path.sep}`))) {
+    throw new Error('out of playlists directory')
+  }
+  if (!/\.m3u8$/i.test(abs)) {
+    throw new Error('not an m3u8 file')
+  }
+  return abs
+}
+
+export async function purgePlaylistExportsSharingIds(
+  musicRoot,
+  { playlistId, libraryPlaylistId, keepAbsPath },
+) {
+  const playlistsDir = path.join(musicRoot, 'Playlists')
+  const catalogStr = playlistId ? String(playlistId).trim() : ''
+  const libraryStr = libraryPlaylistId ? String(libraryPlaylistId).trim() : ''
+  if (!catalogStr && !libraryStr) return
+
+  const entries = await readDirSafe(playlistsDir)
+  const keepResolved = keepAbsPath ? path.resolve(keepAbsPath) : null
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.m3u8$/i.test(entry.name)) continue
+    const abs = path.join(playlistsDir, entry.name)
+    if (keepResolved && path.resolve(abs) === keepResolved) continue
+    const meta = await readPlaylistM3uFileMeta(abs)
+    const matchCatalog = Boolean(catalogStr && meta.catalogPlaylistId === catalogStr)
+    const matchLibrary = Boolean(libraryStr && meta.libraryPlaylistId === libraryStr)
+    if (matchCatalog || matchLibrary) {
+      await fsp.unlink(abs).catch(() => null)
+    }
+  }
 }
 
 export async function isPlaylistInLibrary(playlistId, preScannedIndex = null) {
