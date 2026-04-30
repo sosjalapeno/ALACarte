@@ -295,6 +295,10 @@ export async function purgePlaylistExportsSharingIds(
     const matchLibrary = Boolean(libraryStr && meta.libraryPlaylistId === libraryStr)
     if (matchCatalog || matchLibrary) {
       await fsp.unlink(abs).catch(() => null)
+      const stem = path.basename(abs, path.extname(abs))
+      for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
+        await fsp.unlink(path.join(playlistsDir, `${stem}${ext}`)).catch(() => null)
+      }
     }
   }
 }

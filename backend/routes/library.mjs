@@ -170,6 +170,9 @@ libraryRouter.delete('/playlist', async (req, res) => {
 
     const playlistsDir = path.dirname(absPath)
     const stem = path.basename(absPath, path.extname(absPath))
+    for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
+      await fsp.unlink(path.join(playlistsDir, `${stem}${ext}`)).catch(() => null)
+    }
     const companionDir = path.join(playlistsDir, stem)
     const dirStat = await fsp.stat(companionDir).catch(() => null)
     if (dirStat?.isDirectory()) {
