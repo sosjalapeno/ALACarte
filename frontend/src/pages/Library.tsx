@@ -406,13 +406,16 @@ export function LibraryPage() {
                             </ResolvedMediaLink>
                           </div>
                         </div>
-                        <Badge
-                          className={cx('shrink-0', s.hasLyrics ? 'text-emerald-300' : 'text-white/45')}
+                        <div
+                          className={cx(
+                            'inline-flex min-h-11 shrink-0 select-none items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-medium',
+                            s.hasLyrics ? 'text-emerald-300' : 'text-white/45',
+                          )}
                           title={s.hasLyrics ? 'Lyrics sidecar available' : 'No lyrics sidecar'}
                         >
                           <FileText className="h-3.5 w-3.5" />
                           {s.hasLyrics ? 'Lyrics' : 'No lyrics'}
-                        </Badge>
+                        </div>
                         <Button onClick={() => removeSong(s)} disabled={Boolean(busy[s.id])}>
                           <Trash2 className="h-4 w-4" />
                           {busy[s.id] ? 'Deleting…' : 'Delete'}

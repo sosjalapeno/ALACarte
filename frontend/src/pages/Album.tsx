@@ -62,8 +62,9 @@ export function AlbumPage() {
       jobs.find(
         (j) =>
           j.albumId === id &&
+          j.kind === 'album' &&
           (j.status === 'queued' || j.status === 'running'),
-      ) || ((album && isAlbumInLibrary(album)) ? jobs.find((j) => j.albumId === id && j.status === 'done') : undefined),
+      ) || ((album && isAlbumInLibrary(album)) ? jobs.find((j) => j.albumId === id && j.kind === 'album' && j.status === 'done') : undefined),
     [jobs, id, album, isAlbumInLibrary],
   )
 
