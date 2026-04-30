@@ -562,9 +562,7 @@ export function LibraryPage() {
                 Delete playlist "{deleteTarget.item.playlistName}"?
               </h3>
               <p className="text-sm text-white/60">
-                Removes the .m3u8 file and the matching playlist audio folder under Playlists/. Older
-                imports that landed under artist/album folders are unchanged—delete those from Albums if
-                you still see them.
+                {`This removes the .m3u8 file and any audio folder under Playlists/${deleteTarget.item.playlistName}/ via the library API.`}
               </p>
             </>
           ) : null}
