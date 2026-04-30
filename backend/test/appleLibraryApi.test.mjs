@@ -77,6 +77,53 @@ test('normalizeLibrarySong picks catalogId from playParams.id when it looks like
   assert.equal(out.downloadable, true)
 })
 
+test('resolveMissingCatalogIds fills song catalog ids from ISRC lookup', async () => {
+  const items = [
+    normalizeLibrarySong(
+      {
+        id: 'i.antihero',
+        attributes: {
+          name: 'ANTI-HERO',
+          artistName: 'Ghais Guevara',
+          albumName: 'Goyard & The Kayfabe Reveal',
+          isrc: 'QZTEST000001',
+          playParams: { id: 'i.antihero', kind: 'song', isLibrary: true },
+        },
+      },
+      new Map(),
+    ),
+  ]
+
+  await __test__.resolveMissingCatalogIds('songs', items, {
+    storefront: 'us',
+    songResolver: async ({ storefront, isrcs }) => {
+      assert.equal(storefront, 'us')
+      assert.deepEqual(isrcs, ['QZTEST000001'])
+      return {
+        data: [
+          {
+            id: '1777777001',
+            type: 'songs',
+            attributes: {
+              name: 'ANTI-HERO',
+              artistName: 'Ghais Guevara',
+              albumName: 'Goyard & The Kayfabe Reveal',
+              isrc: 'QZTEST000001',
+            },
+            relationships: {
+              albums: { data: [{ id: '1777777000', type: 'albums' }] },
+            },
+          },
+        ],
+      }
+    },
+  })
+
+  assert.equal(items[0].catalogId, '1777777001')
+  assert.equal(items[0].catalogAlbumId, '1777777000')
+  assert.equal(items[0].downloadable, true)
+})
+
 test('normalizeLibrarySong leaves uploaded tracks with library-prefixed playParams.id as null', () => {
   const out = normalizeLibrarySong(
     {
@@ -91,6 +138,32 @@ test('normalizeLibrarySong leaves uploaded tracks with library-prefixed playPara
   )
   assert.equal(out.catalogId, null)
   assert.equal(out.downloadable, false)
+})
+
+test('resolveMissingCatalogIds leaves genuine uploaded songs unresolved', async () => {
+  const items = [
+    normalizeLibrarySong(
+      {
+        id: 'i.uploaded',
+        attributes: {
+          name: 'Demo',
+          artistName: 'Me',
+          playParams: { id: 'i.uploaded', kind: 'song', isLibrary: true },
+        },
+      },
+      new Map(),
+    ),
+  ]
+
+  await __test__.resolveMissingCatalogIds('songs', items, {
+    storefront: 'us',
+    songResolver: async () => {
+      throw new Error('resolver should not run')
+    },
+  })
+
+  assert.equal(items[0].catalogId, null)
+  assert.equal(items[0].downloadable, false)
 })
 
 test('isAppleCatalogId rejects library-prefixed ids and accepts numeric or pl. ids', async () => {
@@ -179,6 +252,46 @@ test('normalizeLibrarySong is downloadable when catalogId is present, with album
   assert.equal(orphan.catalogId, null)
   assert.equal(orphan.catalogAlbumId, null)
   assert.equal(orphan.downloadable, false)
+})
+
+test('resolveMissingCatalogIds fills album catalog ids from UPC lookup', async () => {
+  const items = [
+    normalizeLibraryAlbum({
+      id: 'l.hyperyouth',
+      attributes: {
+        name: 'HYPERYOUTH (afterparty)',
+        artistName: 'Joey Valence & Brae',
+        trackCount: 20,
+        upc: '196874154854',
+        playParams: { id: 'l.hyperyouth', kind: 'album', isLibrary: true },
+      },
+    }),
+  ]
+
+  await __test__.resolveMissingCatalogIds('albums', items, {
+    storefront: 'us',
+    albumResolver: async ({ storefront, upcs }) => {
+      assert.equal(storefront, 'us')
+      assert.deepEqual(upcs, ['196874154854'])
+      return {
+        data: [
+          {
+            id: '1888888000',
+            type: 'albums',
+            attributes: {
+              name: 'HYPERYOUTH (afterparty)',
+              artistName: 'Joey Valence & Brae',
+              trackCount: 20,
+              upc: '196874154854',
+            },
+          },
+        ],
+      }
+    },
+  })
+
+  assert.equal(items[0].catalogId, '1888888000')
+  assert.equal(items[0].downloadable, true)
 })
 
 test('normalizeLibraryTrack uses catalog id when present and marks downloadable accordingly', () => {

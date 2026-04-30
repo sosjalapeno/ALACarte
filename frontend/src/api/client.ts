@@ -247,6 +247,7 @@ export type CloudLibraryAlbum = {
   artworkColor?: string | null
   trackCount: number
   dateAdded: string | null
+  upc?: string | null
   downloadable: boolean
 }
 
@@ -273,6 +274,7 @@ export type CloudLibrarySong = {
   durationMs: number
   artworkTemplate: string | null
   contentRating: string | null
+  isrc?: string | null
   downloadable: boolean
 }
 
@@ -561,6 +563,7 @@ export const api = {
     http<{
       albums: LibraryAlbum[]
       singles: LibrarySingle[]
+      songKeys?: string[]
       playlistIds?: string[]
       totals: { albums: number; singles: number; playlists?: number }
     }>('/api/library'),

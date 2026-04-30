@@ -38,6 +38,7 @@ libraryRouter.get('/', async (_req, res) => {
     res.json({
       albums,
       singles,
+      songKeys: Array.from(index.songKeys || []),
       playlistIds: Array.from(index.playlistIds || []),
       totals: {
         albums: albums.length,

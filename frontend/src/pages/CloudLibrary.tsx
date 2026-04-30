@@ -622,35 +622,42 @@ function SongSkeletonList() {
 function AlbumGrid({ items }: { items: CloudLibraryAlbum[] }) {
   return (
     <StaggeredList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
-      {items.map((it) => {
-        if (!it.catalogId) {
-          return (
-            <StaggeredItem key={it.libraryId}>
-              <UnsupportedTile
-                title={it.name}
-                subtitle={it.artistName}
-                artworkTemplate={it.artworkTemplate}
-                kind="Uploaded"
-              />
-            </StaggeredItem>
-          )
-        }
-        const album: Album = {
-          id: it.catalogId,
-          name: it.name,
-          artistName: it.artistName,
-          artworkTemplate: it.artworkTemplate,
-          artworkColor: it.artworkColor || null,
-          trackCount: it.trackCount,
-        }
-        return (
-          <StaggeredItem key={it.libraryId}>
-            <AlbumCard album={album} />
-          </StaggeredItem>
-        )
-      })}
+      {items.map((it) => (
+        <StaggeredItem key={it.libraryId}>
+          <CloudAlbumTile item={it} />
+        </StaggeredItem>
+      ))}
     </StaggeredList>
   )
+}
+
+function CloudAlbumTile({ item }: { item: CloudLibraryAlbum }) {
+  const { isAlbumInLibrary } = useLibraryPresence()
+  const localAlbum = { id: item.catalogId || item.libraryId, name: item.name, artistName: item.artistName }
+  const alreadyInLibrary = isAlbumInLibrary(localAlbum)
+
+  if (!item.catalogId) {
+    return (
+      <UnsupportedTile
+        title={item.name}
+        subtitle={item.artistName}
+        artworkTemplate={item.artworkTemplate}
+        kind={alreadyInLibrary ? 'In Library' : 'Unavailable'}
+        variant={alreadyInLibrary ? 'ok' : 'muted'}
+      />
+    )
+  }
+
+  const album: Album = {
+    id: item.catalogId,
+    name: item.name,
+    artistName: item.artistName,
+    artworkTemplate: item.artworkTemplate,
+    artworkColor: item.artworkColor || null,
+    trackCount: item.trackCount,
+  }
+
+  return <AlbumCard album={album} alreadyInLibrary={alreadyInLibrary} />
 }
 
 function PlaylistGrid({ items }: { items: CloudLibraryPlaylist[] }) {
@@ -758,13 +765,13 @@ function CloudSongRow({ song }: { song: CloudLibrarySong }) {
           {song.albumName ? ` · ${song.albumName}` : ''}
         </div>
       </div>
-      {!song.catalogId ? (
-        <div className="shrink-0 pr-1">
-          <Badge>Uploaded</Badge>
-        </div>
-      ) : alreadyInLibrary ? (
+      {alreadyInLibrary ? (
         <div className="shrink-0 pr-1">
           <Badge variant="ok">In library</Badge>
+        </div>
+      ) : !song.catalogId ? (
+        <div className="shrink-0 pr-1">
+          <Badge>Unavailable</Badge>
         </div>
       ) : (
         <div className="shrink-0 pr-1">
@@ -797,11 +804,13 @@ function UnsupportedTile({
   subtitle,
   artworkTemplate,
   kind,
+  variant = 'muted',
 }: {
   title: string
   subtitle: string
   artworkTemplate: string | null
-  kind: 'Uploaded' | 'User-created'
+  kind: 'Unavailable' | 'User-created' | 'In Library'
+  variant?: 'muted' | 'ok'
 }) {
   const thumb = artworkUrl(artworkTemplate, 600)
   return (
@@ -814,7 +823,14 @@ function UnsupportedTile({
             ♪
           </div>
         )}
-        <div className="absolute top-2 left-2 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/80 ring-1 ring-white/15">
+        <div
+          className={cx(
+            'absolute top-2 left-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white ring-1',
+            variant === 'ok'
+              ? 'bg-emerald-500/90 ring-white/20'
+              : 'bg-black/80 text-white/80 ring-white/15',
+          )}
+        >
           {kind}
         </div>
       </div>

@@ -71,6 +71,29 @@ export async function getSong({ storefront, id, language = 'en-US' }) {
   return apiGet(url, { language })
 }
 
+export async function getSongsByIsrc({ storefront, isrcs, language = 'en-US' }) {
+  const values = [...new Set((isrcs || []).map((x) => String(x || '').trim()).filter(Boolean))]
+  if (values.length === 0) return { data: [] }
+  const qs = new URLSearchParams({
+    'filter[isrc]': values.join(','),
+    include: 'albums',
+    l: language,
+  })
+  const url = `${BASE}/${encodeURIComponent(storefront)}/songs?${qs.toString()}`
+  return apiGet(url, { language })
+}
+
+export async function getAlbumsByUpc({ storefront, upcs, language = 'en-US' }) {
+  const values = [...new Set((upcs || []).map((x) => String(x || '').trim()).filter(Boolean))]
+  if (values.length === 0) return { data: [] }
+  const qs = new URLSearchParams({
+    'filter[upc]': values.join(','),
+    l: language,
+  })
+  const url = `${BASE}/${encodeURIComponent(storefront)}/albums?${qs.toString()}`
+  return apiGet(url, { language })
+}
+
 export async function getArtist({ storefront, id, language = 'en-US' }) {
   const qs = new URLSearchParams({
     include: 'albums',

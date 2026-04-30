@@ -1,4 +1,5 @@
 import { getBearerToken, invalidateBearerCache } from './appleToken.mjs'
+import { getAlbumsByUpc, getSongsByIsrc } from './appleApi.mjs'
 
 const ME = 'https://amp-api.music.apple.com/v1/me'
 const LIBRARY_PAGE_SIZE = 100
@@ -54,7 +55,7 @@ export async function getMyStorefront({ mediaUserToken, language } = {}) {
 function buildLibraryUrl(kind, { offset = 0, limit = LIBRARY_PAGE_SIZE, language = 'en-US' } = {}) {
   const qs = new URLSearchParams({
     include: 'catalog',
-    extend: 'playParams,catalogId',
+    extend: 'playParams,catalogId,isrc,upc',
     limit: String(Math.max(1, Math.min(limit, LIBRARY_PAGE_SIZE))),
     offset: String(Math.max(0, offset)),
     l: language,
@@ -107,9 +108,24 @@ function pickCatalogPlaylistId(raw) {
   return null
 }
 
+function catalogResource(raw) {
+  const rel = raw?.relationships?.catalog?.data
+  return Array.isArray(rel) ? rel[0] || null : null
+}
+
+function catalogAttributes(raw) {
+  return catalogResource(raw)?.attributes || {}
+}
+
+function relationId(raw, name) {
+  const rel = raw?.relationships?.[name]?.data
+  return Array.isArray(rel) && rel[0]?.id ? String(rel[0].id) : null
+}
+
 export function normalizeLibraryAlbum(raw) {
   if (!raw) return null
   const a = raw.attributes || {}
+  const ca = catalogAttributes(raw)
   const catalogId = pickCatalogId(raw)
   return {
     libraryId: raw.id,
@@ -120,6 +136,7 @@ export function normalizeLibraryAlbum(raw) {
     artworkColor: a.artwork?.bgColor || null,
     trackCount: Number(a.trackCount || 0),
     dateAdded: a.dateAdded || null,
+    upc: a.upc || ca.upc || null,
     downloadable: Boolean(catalogId),
   }
 }
@@ -146,6 +163,7 @@ export function normalizeLibraryPlaylist(raw) {
 export function normalizeLibrarySong(raw, albumLookup) {
   if (!raw) return null
   const a = raw.attributes || {}
+  const ca = catalogAttributes(raw)
   const catalogId = pickCatalogId(raw)
   const catalogAlbumId =
     catalogId && albumLookup ? albumLookup.get(catalogId) || null : null
@@ -159,6 +177,7 @@ export function normalizeLibrarySong(raw, albumLookup) {
     durationMs: Number(a.durationInMillis || 0),
     artworkTemplate: a.artwork?.url || null,
     contentRating: a.contentRating || null,
+    isrc: a.isrc || ca.isrc || null,
     downloadable: Boolean(catalogId),
   }
 }
@@ -174,7 +193,10 @@ function buildSongAlbumLookup(included) {
   return map
 }
 
-export async function fetchLibraryPage(kind, { mediaUserToken, language, offset, limit } = {}) {
+export async function fetchLibraryPage(
+  kind,
+  { mediaUserToken, language, offset, limit, storefront } = {},
+) {
   if (!['albums', 'playlists', 'songs'].includes(kind)) {
     throw new Error(`unknown library kind: ${kind}`)
   }
@@ -190,12 +212,16 @@ export async function fetchLibraryPage(kind, { mediaUserToken, language, offset,
     const lookup = buildSongAlbumLookup(json?.included)
     items = data.map((raw) => normalizeLibrarySong(raw, lookup)).filter(Boolean)
   }
+  items = await resolveMissingCatalogIds(kind, items, {
+    storefront,
+    language,
+  })
   const next = typeof json?.next === 'string' ? json.next : null
   const total = typeof json?.meta?.total === 'number' ? json.meta.total : null
   return { items, next, total }
 }
 
-export async function* iterateLibrary(kind, { mediaUserToken, language, pageSize } = {}) {
+export async function* iterateLibrary(kind, { mediaUserToken, language, pageSize, storefront } = {}) {
   let offset = 0
   const limit = pageSize || LIBRARY_PAGE_SIZE
   while (true) {
@@ -204,6 +230,7 @@ export async function* iterateLibrary(kind, { mediaUserToken, language, pageSize
       language,
       offset,
       limit,
+      storefront,
     })
     for (const item of page.items) yield item
     if (!page.next || page.items.length === 0) return
@@ -215,6 +242,7 @@ export async function* iterateLibrary(kind, { mediaUserToken, language, pageSize
 export function normalizeLibraryTrack(raw) {
   if (!raw) return null
   const a = raw.attributes || {}
+  const ca = catalogAttributes(raw)
   const catalogId = pickCatalogId(raw)
   return {
     id: catalogId || raw.id,
@@ -227,6 +255,7 @@ export function normalizeLibraryTrack(raw) {
     artworkTemplate: a.artwork?.url || null,
     artworkColor: a.artwork?.bgColor || null,
     contentRating: a.contentRating || null,
+    isrc: a.isrc || ca.isrc || null,
     hasLossless: Boolean(a.audioTraits?.includes?.('lossless')),
     hasHiRes: Boolean(a.audioTraits?.includes?.('hi-res-lossless')),
     hasAtmos: Boolean(
@@ -234,6 +263,110 @@ export function normalizeLibraryTrack(raw) {
     ),
     downloadable: Boolean(catalogId),
   }
+}
+
+export async function resolveMissingCatalogIds(
+  kind,
+  items,
+  {
+    storefront,
+    language = 'en-US',
+    songResolver = getSongsByIsrc,
+    albumResolver = getAlbumsByUpc,
+  } = {},
+) {
+  if (!storefront || !Array.isArray(items) || items.length === 0) return items
+  if (kind === 'songs') {
+    const unresolved = items.filter((item) => !item.catalogId && item.isrc)
+    if (unresolved.length === 0) return items
+    const isrcs = [...new Set(unresolved.map((item) => item.isrc))]
+    let json
+    try {
+      json = await songResolver({ storefront, isrcs, language })
+    } catch {
+      return items
+    }
+    const byIsrc = groupCatalogData(json?.data, (raw) => raw?.attributes?.isrc)
+    for (const item of unresolved) {
+      const match = pickBestCatalogSong(item, byIsrc.get(item.isrc) || [])
+      if (!match?.id) continue
+      item.catalogId = String(match.id)
+      item.catalogAlbumId = relationId(match, 'albums') || item.catalogAlbumId || null
+      item.downloadable = true
+    }
+    return items
+  }
+  if (kind === 'albums') {
+    const unresolved = items.filter((item) => !item.catalogId && item.upc)
+    if (unresolved.length === 0) return items
+    const upcs = [...new Set(unresolved.map((item) => item.upc))]
+    let json
+    try {
+      json = await albumResolver({ storefront, upcs, language })
+    } catch {
+      return items
+    }
+    const byUpc = groupCatalogData(json?.data, (raw) => raw?.attributes?.upc)
+    for (const item of unresolved) {
+      const match = pickBestCatalogAlbum(item, byUpc.get(item.upc) || [])
+      if (!match?.id) continue
+      item.catalogId = String(match.id)
+      item.downloadable = true
+    }
+  }
+  return items
+}
+
+function groupCatalogData(data, keyFn) {
+  const map = new Map()
+  for (const raw of Array.isArray(data) ? data : []) {
+    const key = String(keyFn(raw) || '').trim()
+    if (!key) continue
+    const group = map.get(key) || []
+    group.push(raw)
+    map.set(key, group)
+  }
+  return map
+}
+
+function pickBestCatalogSong(item, candidates) {
+  return [...candidates].sort((a, b) => scoreCatalogSong(item, b) - scoreCatalogSong(item, a))[0] || null
+}
+
+function pickBestCatalogAlbum(item, candidates) {
+  return [...candidates].sort((a, b) => scoreCatalogAlbum(item, b) - scoreCatalogAlbum(item, a))[0] || null
+}
+
+function scoreCatalogSong(item, raw) {
+  const a = raw?.attributes || {}
+  let score = 0
+  if (sameText(item.name, a.name)) score += 4
+  if (sameText(item.artistName, a.artistName)) score += 3
+  if (sameText(item.albumName, a.albumName)) score += 2
+  return score
+}
+
+function scoreCatalogAlbum(item, raw) {
+  const a = raw?.attributes || {}
+  let score = 0
+  if (sameText(item.name, a.name)) score += 4
+  if (sameText(item.artistName, a.artistName)) score += 3
+  if (Number(item.trackCount || 0) === Number(a.trackCount || 0)) score += 1
+  return score
+}
+
+function sameText(a, b) {
+  return normalizeText(a) === normalizeText(b)
+}
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
 }
 
 export async function fetchLibraryPlaylist({ libraryId, mediaUserToken, language = 'en-US' }) {
@@ -259,7 +392,7 @@ export async function fetchLibraryPlaylistTracksPage({
   const qs = new URLSearchParams({
     include: 'catalog',
     'include[library-songs]': 'catalog',
-    extend: 'playParams,catalogId',
+    extend: 'playParams,catalogId,isrc,upc',
     limit: String(Math.max(1, Math.min(limit, LIBRARY_PAGE_SIZE))),
     offset: String(Math.max(0, offset)),
     l: language,
@@ -331,5 +464,6 @@ export const __test__ = {
   pickCatalogId,
   pickCatalogPlaylistId,
   buildLibraryUrl,
+  resolveMissingCatalogIds,
   LIBRARY_PAGE_SIZE,
 }

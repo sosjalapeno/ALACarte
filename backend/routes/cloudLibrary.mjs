@@ -76,6 +76,7 @@ async function listKind(req, res, kind) {
     const page = await fetchLibraryPage(kind, {
       mediaUserToken,
       language: settings.language,
+      storefront: settings.storefront,
       offset,
       limit,
     })
@@ -170,6 +171,7 @@ cloudLibraryRouter.post('/download-all', async (req, res) => {
     for await (const item of iterateLibrary(kind, {
       mediaUserToken,
       language: settings.language,
+      storefront: settings.storefront,
     })) {
       scanned += 1
       const enqueueable =

@@ -79,7 +79,7 @@ export function LibraryPresenceProvider({ children }: { children: React.ReactNod
       const r = await api.library()
       if (requestId !== requestIdRef.current) return
       setSnapshot((prev) => ({
-        ...buildSnapshot(r.albums, r.singles, r.playlistIds || []),
+        ...buildSnapshot(r.albums, r.singles, r.playlistIds || [], r.songKeys || []),
         albumTrackPresence: prev.albumTrackPresence,
       }))
       setReady(true)
@@ -313,6 +313,7 @@ function buildSnapshot(
   albums: LibraryAlbum[],
   singles: LibrarySingle[],
   playlistIdsArr: string[],
+  songKeysArr: string[],
 ): PresenceSnapshot {
   const albumKeys: Record<string, true> = {}
   const songKeys: Record<string, true> = {}
@@ -326,6 +327,10 @@ function buildSnapshot(
   for (const single of singles) {
     const key = makeSongKey(single)
     if (key) songKeys[key] = true
+  }
+
+  for (const key of songKeysArr || []) {
+    if (key) songKeys[String(key)] = true
   }
 
   for (const id of playlistIdsArr || []) {
