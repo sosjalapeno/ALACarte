@@ -26,7 +26,7 @@ import {
   resolveArtistDir,
   sanitizeSegment,
 } from './folderLayout.mjs'
-import { hasAlbumInLibrary, hasSongInLibrary, invalidateLibraryCache, isPlaylistInLibrary, stripTrailingYear } from './libraryIndex.mjs'
+import { getAlbumTrackPresence, hasSongInLibrary, invalidateLibraryCache, isPlaylistInLibrary, stripTrailingYear } from './libraryIndex.mjs'
 import { probeWrapperPorts } from './wrapperHealth.mjs'
 
 const MUSIC_ROOT = process.env.AMDL_MUSIC_PATH || '/music'
@@ -209,12 +209,21 @@ export async function enqueueAlbum({ albumId, storefront, quality, expectedArtis
     console.error('album metadata lookup failed', err.message)
   }
 
-  if (
-    meta?.artistName &&
-    meta?.name &&
-    (await hasAlbumInLibrary(meta.artistName, meta.name))
-  ) {
-    throw alreadyInLibraryError('Already in library')
+  let missingTracks = null
+  if (meta?.artistName && meta?.name && Array.isArray(meta?.tracks) && meta.tracks.length > 0) {
+    const presence = await getAlbumTrackPresence(
+      meta.artistName,
+      meta.name,
+      meta.tracks.map((t) => ({ id: t.id, name: t.name })),
+    )
+    if (presence.complete || presence.present === presence.expected) {
+      throw alreadyInLibraryError('Already in library')
+    }
+    if (presence.present > 0) {
+      missingTracks = meta.tracks
+        .filter((t) => !presence.tracks[t.id])
+        .map((t) => ({ id: t.id, name: t.name }))
+    }
   }
 
   const job = {
@@ -224,6 +233,7 @@ export async function enqueueAlbum({ albumId, storefront, quality, expectedArtis
     progress: 0,
     albumId,
     albumTitle: stripTrailingYear(meta?.name) || 'Unknown album',
+    albumName: meta?.name || null,
     artist: meta?.artistName || 'Unknown artist',
     artistId: expectedArtistId || meta?.artistId || null,
     year: meta?.year || null,
@@ -241,7 +251,8 @@ export async function enqueueAlbum({ albumId, storefront, quality, expectedArtis
     message: 'Queued',
     error: null,
     finalDir: null,
-    stats: { total: meta?.trackCount || 0, done: 0, failed: 0 },
+    missingTracks,
+    stats: { total: missingTracks?.length || meta?.trackCount || 0, done: 0, failed: 0 },
   }
   state.jobs.set(id, job)
   state.queue.push(id)
@@ -477,6 +488,22 @@ async function runJob(job) {
       mediaUserToken: creds.mediaUserToken,
       stagingRoot: jobStaging,
     })
+
+    if (
+      job.kind === 'album' &&
+      Array.isArray(job.missingTracks) &&
+      job.missingTracks.length > 0
+    ) {
+      await runPartialAlbumFill({
+        job,
+        jobStaging,
+        settings,
+        creds,
+        quality,
+        progressState,
+      })
+      return
+    }
 
     const isSong = job.kind === 'song'
     const isPlaylist = job.kind === 'playlist'
@@ -785,12 +812,198 @@ async function runJob(job) {
   }
 }
 
-// amdp emits lines like:
-//   "Track 1 of 12:"          (album/song — primary format)
-//   "Track 1 of 12: songs"    (playlist/station — with type suffix)
-//   "[1/12] Song Name"        (legacy fallback)
-//   "Downloading X/Y: Song"   (legacy fallback)
-//   progress-bar lines with percentages (schollz/progressbar, uses \r)
+async function runPartialAlbumFill({
+  job,
+  jobStaging,
+  settings,
+  creds,
+  quality,
+  progressState,
+}) {
+  const missing = job.missingTracks || []
+  const baseUrl = `https://music.apple.com/${encodeURIComponent(job.storefront)}/album/_/${encodeURIComponent(job.albumId)}`
+
+  progressState.downloadTotal = missing.length
+  progressState.downloadDone = 0
+  progressState.downloadPartial = 0
+  if (progressState.convertEnabled) {
+    progressState.convertTotal = missing.length
+    progressState.convertDone = 0
+  }
+  job.stats.total = missing.length
+  job.stats.done = 0
+  applyProgress(job, progressState, {
+    message: `Filling missing tracks (0/${missing.length})`,
+    currentTrack: null,
+  })
+
+  let firstArtistName = null
+  let firstAlbumName = null
+  const trackAlbumPaths = []
+
+  for (let i = 0; i < missing.length; i += 1) {
+    const track = missing[i]
+    const trackStaging = path.join(jobStaging, `t${i}`)
+    await ensureDir(trackStaging)
+    await writeAmdpConfig({
+      settings,
+      mediaUserToken: creds.mediaUserToken,
+      stagingRoot: trackStaging,
+    })
+
+    applyProgress(job, progressState, {
+      message: `Filling missing tracks (${i}/${missing.length})`,
+      currentTrack: track.name || null,
+    })
+
+    const url = `${baseUrl}?i=${encodeURIComponent(track.id)}`
+    const trackProgress = {
+      downloadTotal: 1,
+      downloadDone: 0,
+      downloadPartial: 0,
+      convertEnabled: false,
+      convertTotal: 0,
+      convertDone: 0,
+      finalizeProgress: 0,
+    }
+    const sub = await runAmdpDownload({
+      job,
+      jobStaging: trackStaging,
+      url,
+      quality,
+      isSong: true,
+      progressState: trackProgress,
+    })
+    const combined = `${sub.stdout}\n${sub.stderr}`
+    if (
+      quality === 'atmos' &&
+      (await shouldFallbackAtmosToFlac(sub, combined, trackStaging))
+    ) {
+      await fsp.rm(trackStaging, { recursive: true, force: true })
+      await ensureDir(trackStaging)
+      await writeAmdpConfig({
+        settings,
+        mediaUserToken: creds.mediaUserToken,
+        stagingRoot: trackStaging,
+      })
+      const retry = await runAmdpDownload({
+        job,
+        jobStaging: trackStaging,
+        url,
+        quality: 'flac',
+        isSong: true,
+        progressState: {
+          downloadTotal: 1,
+          downloadDone: 0,
+          downloadPartial: 0,
+          convertEnabled: false,
+          convertTotal: 0,
+          convertDone: 0,
+          finalizeProgress: 0,
+        },
+      })
+      assertAmdpResult(retry, `${retry.stdout}\n${retry.stderr}`)
+    } else {
+      assertAmdpResult(sub, combined)
+    }
+
+    const artistDirs = await fsp.readdir(trackStaging, { withFileTypes: true })
+    const artistEntry = artistDirs.find((e) => e.isDirectory())
+    if (!artistEntry) {
+      throw new Error(`amdp produced no artist folder for track ${track.id}`)
+    }
+    const artistPath = path.join(trackStaging, artistEntry.name)
+    const albumDirs = await fsp.readdir(artistPath, { withFileTypes: true })
+    const albumEntry = albumDirs.find((e) => e.isDirectory())
+    if (!albumEntry) {
+      throw new Error(`amdp produced no album folder for track ${track.id}`)
+    }
+    const albumPath = path.join(artistPath, albumEntry.name)
+    if (!firstArtistName) firstArtistName = artistEntry.name
+    if (!firstAlbumName) firstAlbumName = albumEntry.name
+    trackAlbumPaths.push(albumPath)
+
+    progressState.downloadDone = i + 1
+    progressState.downloadPartial = 0
+    job.stats.done = i + 1
+    applyProgress(job, progressState, {
+      message: `Filling missing tracks (${i + 1}/${missing.length})`,
+    })
+  }
+
+  if (!firstArtistName || !firstAlbumName) {
+    throw new Error('partial album fill produced no artist/album folder')
+  }
+
+  if (progressState.convertEnabled) {
+    applyProgress(job, progressState, {
+      message: 'Converting to FLAC',
+      currentTrack: null,
+    })
+    let convertedTotal = 0
+    let convertedFailed = 0
+    for (const albumPath of trackAlbumPaths) {
+      const conv = await convertDirToFlac(albumPath, {
+        onProgress: ({ index, total }) => {
+          if (total > 0) {
+            progressState.convertTotal = Math.max(progressState.convertTotal, missing.length)
+          }
+          progressState.convertDone = Math.min(
+            progressState.convertTotal,
+            convertedTotal + Math.max(0, index),
+          )
+          applyProgress(job, progressState, {
+            message: `Converting to FLAC (${progressState.convertDone}/${progressState.convertTotal})`,
+          })
+        },
+      })
+      convertedTotal += conv.converted
+      convertedFailed += conv.failed
+    }
+    job.stats.converted = convertedTotal
+    job.stats.flacFailed = convertedFailed
+    progressState.convertDone = progressState.convertTotal
+    applyProgress(job, progressState, { message: 'Converting to FLAC' })
+  }
+
+  const finalDir = await computeFinalDir(
+    MUSIC_ROOT,
+    firstArtistName,
+    firstAlbumName.replace(/\s*\(\d{4}\)\s*$/, ''),
+    job.year,
+  )
+  progressState.finalizeProgress = Math.max(progressState.finalizeProgress, 0.5)
+  applyProgress(job, progressState, {
+    message: 'Moving into library',
+    currentTrack: null,
+  })
+  for (const albumPath of trackAlbumPaths) {
+    await mergeMove(albumPath, finalDir)
+  }
+
+  await extractFolderArt(finalDir, { size: 1000 }).catch(() => null)
+
+  try {
+    await fsp.rm(jobStaging, { recursive: true, force: true })
+  } catch {}
+
+  progressState.finalizeProgress = 1
+  applyProgress(job, progressState, {
+    message: 'Finalizing import',
+    currentTrack: null,
+  })
+
+  updateJob(job.id, {
+    status: 'done',
+    progress: 100,
+    message: `Filled ${missing.length} missing track${missing.length === 1 ? '' : 's'}`,
+    finalDir,
+  })
+  invalidateLibraryCache()
+  await appendHistory(job)
+  triggerNavidromeScan().catch(console.error)
+}
+
 function handleAmdpLine(job, line, which, progressState) {
   let matchedTrackHeader = false
 
@@ -879,8 +1092,6 @@ function handleAmdpLine(job, line, which, progressState) {
     }
   }
 
-  // Progress-bar percentage drives in-track partial. A new track header
-  // resets downloadPartial so each track's bar advances the shared total.
   if (!matchedTrackHeader) {
     const pctMatch = line.match(/(\d{1,3})\s*%/)
     if (pctMatch) {

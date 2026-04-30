@@ -538,11 +538,27 @@ export const api = {
     albums?: Array<{ id: string; artistName: string; albumName: string }>
     songs?: Array<{ id: string; artistName: string; songName: string }>
     playlists?: Array<{ id: string }>
+    albumTracks?: Array<{
+      id: string
+      artistName: string
+      albumName: string
+      tracks: Array<{ id: string; name: string }>
+    }>
   }) =>
     http<{
       albums: Record<string, boolean>
       songs: Record<string, boolean>
       playlists: Record<string, boolean>
+      albumTracks: Record<
+        string,
+        {
+          present: number
+          expected: number
+          complete: boolean
+          folderExists: boolean
+          tracks: Record<string, boolean>
+        }
+      >
     }>('/api/library/presence', {
       method: 'POST',
       body: JSON.stringify(payload),

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Download, Clock3, Badge as BadgeIcon } from 'lucide-react'
+import { Download, Clock3, Badge as BadgeIcon, Check } from 'lucide-react'
 
 import {
   api,
@@ -11,13 +11,16 @@ import {
 } from '../api/client'
 import { useLibraryPresence } from '../hooks/useLibraryPresence'
 import { useQueue } from '../hooks/useQueue'
+import { useTouchMode } from '../hooks/useTouchMode'
 import { ProgressBar } from '../components/ProgressBar'
 import { Badge } from '../components/Badge'
 import { Button } from '../components/Button'
+import { DownloadButton } from '../components/DownloadButton'
 import { ResolvedMediaLink } from '../components/ResolvedMediaLink'
 import { stripYear, formatPercent } from '../lib/format'
 import { StaggeredList, StaggeredItem } from '../components/StaggeredList'
 import { VinylCover, vinylSpring } from '../components/VinylCover'
+import { cx } from '../lib/cx'
 import { motion } from 'framer-motion'
 
 function formatDur(ms: number | undefined) {
@@ -35,8 +38,24 @@ export function AlbumPage() {
   const [enqueueing, setEnqueueing] = useState(false)
   const [vinylHovered, setVinylHovered] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const { ready, isAlbumInLibrary, verifyAlbumPresence } = useLibraryPresence()
+  const {
+    ready,
+    isAlbumInLibrary,
+    verifyAlbumPresence,
+    verifyAlbumTracksPresence,
+    getAlbumTrackPresence,
+  } = useLibraryPresence()
   const { jobs } = useQueue()
+  const touchMode = useTouchMode()
+
+  const trackPresence = album ? getAlbumTrackPresence(album.id) : null
+  const presentCount = trackPresence?.present ?? 0
+  const expectedCount = trackPresence?.expected ?? album?.trackCount ?? album?.tracks?.length ?? 0
+  const allPresent = trackPresence ? trackPresence.complete : false
+  const partialState = trackPresence
+    ? presentCount > 0 && presentCount < expectedCount
+    : false
+  const missingCount = Math.max(0, expectedCount - presentCount)
 
   const existingJob: Job | undefined = useMemo(
     () =>
@@ -64,6 +83,17 @@ export function AlbumPage() {
         if (!cancelled) {
           setAlbum(r.album)
           verifyAlbumPresence(r.album, true)
+          if (r.album?.tracks?.length) {
+            verifyAlbumTracksPresence(
+              {
+                id: r.album.id,
+                artistName: r.album.artistName,
+                name: r.album.name,
+                tracks: r.album.tracks.map((t) => ({ id: t.id, name: t.name })),
+              },
+              true,
+            )
+          }
         }
       })
       .catch((err) => {
@@ -74,7 +104,22 @@ export function AlbumPage() {
     return () => {
       cancelled = true
     }
-  }, [id, verifyAlbumPresence])
+  }, [id, verifyAlbumPresence, verifyAlbumTracksPresence])
+
+  useEffect(() => {
+    if (!album?.tracks?.length) return
+    if (ready && !trackPresence) {
+      verifyAlbumTracksPresence(
+        {
+          id: album.id,
+          artistName: album.artistName,
+          name: album.name,
+          tracks: album.tracks.map((t) => ({ id: t.id, name: t.name })),
+        },
+        false,
+      )
+    }
+  }, [album, ready, trackPresence, verifyAlbumTracksPresence])
 
   const onDownload = async () => {
     if (!album) return
@@ -96,7 +141,20 @@ export function AlbumPage() {
   const coverBig = artworkUrl(album?.artworkTemplate, 600)
   const bgColor = album?.artworkColor ? `#${album.artworkColor}` : '#1a1a1a'
   const primaryArtistId = album?.artistId || album?.artists?.[0]?.id || null
-  const alreadyInLibrary = album ? isAlbumInLibrary(album) : false
+  const alreadyInLibrary = allPresent || (!trackPresence && album ? isAlbumInLibrary(album) : false)
+  const downloadButtonLabel = enqueueing
+    ? 'Queueing…'
+    : alreadyInLibrary
+    ? 'Already in library'
+    : existingJob?.status === 'done'
+    ? 'Already imported'
+    : existingJob?.status === 'queued'
+    ? 'Queued'
+    : existingJob?.status === 'running'
+    ? 'Downloading…'
+    : partialState && missingCount > 0
+    ? `Fill missing tracks · ${missingCount}`
+    : 'Download'
 
   return (
     <div className="mx-auto w-full max-w-6xl pt-4 md:pt-6">
@@ -177,16 +235,12 @@ export function AlbumPage() {
                     }
                     className="flex-1 md:min-w-[200px] md:flex-none disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Download className="h-4 w-4" />
-                    {alreadyInLibrary
-                      ? 'Already in library'
-                      : existingJob?.status === 'done'
-                      ? 'Already imported'
-                      : existingJob?.status === 'queued'
-                        ? 'Queued'
-                        : existingJob?.status === 'running'
-                          ? 'Downloading…'
-                          : 'Download'}
+                    {alreadyInLibrary ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                    {downloadButtonLabel}
                   </Button>
                 </div>
               </div>
@@ -195,21 +249,29 @@ export function AlbumPage() {
 
           <div className="px-4 md:px-8 pb-8">
             <div className="mt-2 border-t border-white/10 pt-4">
-              <div className="grid grid-cols-[2rem_1fr_auto] md:grid-cols-[2rem_1fr_8rem_5rem] gap-x-3 gap-y-0 text-xs uppercase tracking-wider text-white/40 border-b border-white/5 py-2">
+              <div className="grid grid-cols-[2rem_1fr_auto_2.25rem] md:grid-cols-[2rem_1fr_8rem_5rem_2.25rem] gap-x-3 gap-y-0 text-xs uppercase tracking-wider text-white/40 border-b border-white/5 py-2">
                 <div>#</div>
                 <div>Title</div>
                 <div className="hidden md:block">Artist</div>
                 <div className="text-right"><Clock3 className="h-3.5 w-3.5 inline" /></div>
+                <div />
               </div>
               {album.tracks.map((t) => {
                 const tArtistId = t.artistName === album.artistName 
                   ? primaryArtistId 
                   : album.artists?.find(a => a.name === t.artistName)?.id
+                const trackDownloaded = Boolean(trackPresence?.tracks?.[t.id])
+                const trackJob = jobs.find(
+                  (j) =>
+                    (j.songId === t.id ||
+                      (j.albumId === album.id && j.kind === 'album')) &&
+                    (j.status === 'queued' || j.status === 'running'),
+                ) || null
 
                 return (
                 <StaggeredItem
                   key={t.id}
-                  className="grid grid-cols-[2rem_1fr_auto] md:grid-cols-[2rem_1fr_8rem_5rem] gap-x-3 py-2.5 items-center border-b border-white/5 hover:bg-accent/[0.05] transition-colors rounded-[6px]"
+                  className="group/track grid grid-cols-[2rem_1fr_auto_2.25rem] md:grid-cols-[2rem_1fr_8rem_5rem_2.25rem] gap-x-3 py-2.5 items-center border-b border-white/5 hover:bg-accent/[0.05] transition-colors rounded-[6px]"
                 >
                   <div className="text-white/45 tabular-nums text-sm">{t.trackNumber ?? '—'}</div>
                   <div className="min-w-0">
@@ -240,6 +302,39 @@ export function AlbumPage() {
                     {t.hasHiRes && (
                       <BadgeIcon className="h-3.5 w-3.5 text-accent inline ml-1.5" aria-label="Hi-Res" />
                     )}
+                  </div>
+                  <div className="flex items-center justify-end">
+                    <DownloadButton
+                      job={trackJob}
+                      size="sm"
+                      blocked={trackDownloaded}
+                      ariaLabel={`Download ${t.name}`}
+                      onStart={async () => {
+                        try {
+                          await api.enqueueSong(t.id, album.id)
+                          return true
+                        } catch (err: any) {
+                          if (/already in library/i.test(String(err?.message || ''))) {
+                            await verifyAlbumTracksPresence(
+                              {
+                                id: album.id,
+                                artistName: album.artistName,
+                                name: album.name,
+                                tracks: album.tracks.map((x) => ({ id: x.id, name: x.name })),
+                              },
+                              true,
+                            )
+                            return false
+                          }
+                          throw err
+                        }
+                      }}
+                      className={cx(
+                        trackDownloaded || trackJob || touchMode
+                          ? 'opacity-100'
+                          : 'opacity-0 group-hover/track:opacity-100 focus-within:opacity-100 transition-opacity duration-200',
+                      )}
+                    />
                   </div>
                 </StaggeredItem>
                 )

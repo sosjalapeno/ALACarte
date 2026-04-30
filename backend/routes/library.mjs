@@ -4,7 +4,7 @@ import path from 'node:path'
 
 import { searchCatalog } from '../lib/appleApi.mjs'
 import { emitEvent } from '../lib/eventBus.mjs'
-import { invalidateLibraryCache, makeAlbumKey, makeSongKey, scanLibrary, stripTrailingYear } from '../lib/libraryIndex.mjs'
+import { getAlbumTrackPresence, invalidateLibraryCache, makeAlbumKey, makeSongKey, scanLibrary, stripTrailingYear } from '../lib/libraryIndex.mjs'
 import { readSettings } from '../lib/settingsStore.mjs'
 
 export const libraryRouter = express.Router()
@@ -83,7 +83,25 @@ libraryRouter.post('/presence', async (req, res) => {
       playlists[id] = index.playlistIds.has(id)
     }
 
-    res.json({ albums, songs, playlists })
+    const albumTrackChecks = Array.isArray(req.body?.albumTracks)
+      ? req.body.albumTracks
+      : []
+    const albumTracks = {}
+    for (const item of albumTrackChecks) {
+      const id = String(item?.id || '')
+      if (!id) continue
+      const artistName = String(item?.artistName || '')
+      const albumName = stripTrailingYear(String(item?.albumName || ''))
+      const tracks = Array.isArray(item?.tracks) ? item.tracks : []
+      albumTracks[id] = await getAlbumTrackPresence(
+        artistName,
+        albumName,
+        tracks,
+        index,
+      )
+    }
+
+    res.json({ albums, songs, playlists, albumTracks })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

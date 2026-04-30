@@ -32,6 +32,7 @@ export async function scanLibrary() {
   const singles = []
   const albumKeys = new Set()
   const songKeys = new Set()
+  const albumTrackKeys = new Map()
   const playlistIds = new Set()
 
   const playlistsDir = path.join(MUSIC_ROOT, 'Playlists')
@@ -110,7 +111,18 @@ export async function scanLibrary() {
         hasLyrics: lyricsCount > 0,
         addedAt,
       })
-      albumKeys.add(makeAlbumKey(artistName, albumName))
+      const albumKey = makeAlbumKey(artistName, albumName)
+      albumKeys.add(albumKey)
+      const trackSet = new Set()
+      for (const file of audioFiles) {
+        const songName = songNameFromFilename(file.name)
+        if (!songName) continue
+        const songKey = makeSongKey(artistName, songName)
+        if (!songKey) continue
+        songKeys.add(songKey)
+        trackSet.add(songKey)
+      }
+      if (albumKey) albumTrackKeys.set(albumKey, trackSet)
     }
   }
 
@@ -125,7 +137,17 @@ export async function scanLibrary() {
     ),
   )
 
-  return { albums, singles, albumKeys, songKeys, playlistIds }
+  return { albums, singles, albumKeys, songKeys, albumTrackKeys, playlistIds }
+}
+
+export function songNameFromFilename(filename) {
+  if (!filename) return ''
+  let base = String(filename).replace(/\.(flac|m4a|mp3)$/i, '')
+  // Strip leading "NN. " or "NN - " or "NN " track-number prefix.
+  base = base.replace(/^\s*\d{1,3}\s*[.\-]?\s+/, '')
+  // Strip the [E]/[C]/[M] choice tags amdp may append.
+  base = base.replace(/\s*\[[ECM]\]\s*$/i, '')
+  return base.trim()
 }
 
 async function readPlaylistId(filePath) {
@@ -160,6 +182,29 @@ export async function hasAlbumInLibrary(artistName, albumName, preScannedIndex =
   if (!key) return false
   const index = preScannedIndex || (await getCachedIndex())
   return index.albumKeys.has(key)
+}
+
+export async function getAlbumTrackPresence(artistName, albumName, tracks, preScannedIndex = null) {
+  const index = preScannedIndex || (await getCachedIndex())
+  const albumKey = makeAlbumKey(artistName, albumName)
+  const present = {}
+  let count = 0
+  for (const track of tracks || []) {
+    const id = String(track?.id || '')
+    if (!id) continue
+    const songKey = makeSongKey(artistName, track?.name || '')
+    const has = Boolean(songKey && index.songKeys.has(songKey))
+    present[id] = has
+    if (has) count += 1
+  }
+  const expected = (tracks || []).length
+  return {
+    tracks: present,
+    present: count,
+    expected,
+    complete: expected > 0 && count === expected && index.albumKeys.has(albumKey),
+    folderExists: Boolean(albumKey && index.albumKeys.has(albumKey)),
+  }
 }
 
 export async function hasSongInLibrary(artistName, songName, preScannedIndex = null) {

@@ -20,13 +20,21 @@ type Props = {
 
 export function AlbumCard({ album, size = 'md', alreadyInLibrary = false }: Props) {
   const { jobs } = useQueue()
-  const { ready, isAlbumInLibrary, verifyAlbumPresence } = useLibraryPresence()
+  const { ready, isAlbumInLibrary, verifyAlbumPresence, getAlbumTrackPresence } = useLibraryPresence()
   const touchMode = useTouchMode()
   const appSettings = useAppSettings()
   const showRatingBadge =
     appSettings?.explicitFilter === 'both' &&
     (album.contentRating === 'explicit' || album.contentRating === 'clean')
-  const blocked = alreadyInLibrary || isAlbumInLibrary(album)
+  const trackPresence = getAlbumTrackPresence(album.id)
+  const partial = Boolean(
+    trackPresence &&
+      trackPresence.expected > 0 &&
+      trackPresence.present > 0 &&
+      trackPresence.present < trackPresence.expected,
+  )
+  const fullByTracks = Boolean(trackPresence?.complete)
+  const blocked = alreadyInLibrary || fullByTracks || (!trackPresence && isAlbumInLibrary(album))
   const matching = useMemo(() => {
     const active = jobs.find(
       (j) =>
@@ -66,11 +74,19 @@ export function AlbumCard({ album, size = 'md', alreadyInLibrary = false }: Prop
               ♪
             </div>
           )}
-          {(blocked || showRatingBadge) && (
+          {(blocked || partial || showRatingBadge) && (
             <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
               {blocked && (
                 <div className="rounded bg-emerald-500/90 backdrop-blur-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm ring-1 ring-white/20">
                   In Library
+                </div>
+              )}
+              {partial && !blocked && (
+                <div
+                  className="rounded bg-amber-400/90 backdrop-blur-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-black shadow-sm ring-1 ring-black/10"
+                  title={`${trackPresence?.present || 0} of ${trackPresence?.expected || 0} tracks downloaded`}
+                >
+                  Partial
                 </div>
               )}
               {showRatingBadge && album.contentRating === 'explicit' && (
