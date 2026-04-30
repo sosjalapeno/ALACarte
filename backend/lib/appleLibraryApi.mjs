@@ -54,29 +54,56 @@ export async function getMyStorefront({ mediaUserToken, language } = {}) {
 function buildLibraryUrl(kind, { offset = 0, limit = LIBRARY_PAGE_SIZE, language = 'en-US' } = {}) {
   const qs = new URLSearchParams({
     include: 'catalog',
+    extend: 'playParams,catalogId',
     limit: String(Math.max(1, Math.min(limit, LIBRARY_PAGE_SIZE))),
     offset: String(Math.max(0, offset)),
     l: language,
   })
   if (kind === 'songs') {
+    qs.set('include[library-songs]', 'catalog,albums')
     qs.set('include[songs]', 'albums')
+  } else if (kind === 'albums') {
+    qs.set('include[library-albums]', 'catalog')
+  } else if (kind === 'playlists') {
+    qs.set('include[library-playlists]', 'catalog')
   }
   return `${ME}/library/${kind}?${qs.toString()}`
 }
 
+const CATALOG_NUMERIC_RE = /^\d{6,15}$/
+const CATALOG_PLAYLIST_RE = /^pl\.[A-Za-z0-9-]+$/
+const LIBRARY_PREFIX_RE = /^[ilp]\./
+
+export function isAppleCatalogId(id) {
+  if (!id) return false
+  const s = String(id)
+  if (LIBRARY_PREFIX_RE.test(s)) return false
+  return CATALOG_NUMERIC_RE.test(s) || CATALOG_PLAYLIST_RE.test(s)
+}
+
 function pickCatalogId(raw) {
-  const playParamsId = raw?.attributes?.playParams?.catalogId
-  if (playParamsId) return String(playParamsId)
+  const pp = raw?.attributes?.playParams || {}
+  if (pp.catalogId) return String(pp.catalogId)
   const rel = raw?.relationships?.catalog?.data
   if (Array.isArray(rel) && rel[0]?.id) return String(rel[0].id)
+  if (pp.purchasedId && isAppleCatalogId(pp.purchasedId)) return String(pp.purchasedId)
+  if (pp.id && isAppleCatalogId(pp.id)) return String(pp.id)
   return null
 }
 
 function pickCatalogPlaylistId(raw) {
   const rel = raw?.relationships?.catalog?.data
   if (Array.isArray(rel) && rel[0]?.id) return String(rel[0].id)
-  const globalId = raw?.attributes?.playParams?.globalId
-  if (globalId && /^pl\./.test(globalId)) return String(globalId)
+  const pp = raw?.attributes?.playParams || {}
+  if (pp.globalId && CATALOG_PLAYLIST_RE.test(pp.globalId)) return String(pp.globalId)
+  if (
+    pp.id &&
+    CATALOG_PLAYLIST_RE.test(pp.id) &&
+    pp.isLibrary !== true &&
+    raw?.attributes?.canEdit !== true
+  ) {
+    return String(pp.id)
+  }
   return null
 }
 

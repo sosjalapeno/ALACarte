@@ -47,6 +47,62 @@ test('normalizeLibraryAlbum returns null catalogId when neither source has it', 
   assert.equal(out.downloadable, false)
 })
 
+test('normalizeLibraryAlbum picks catalogId from playParams.purchasedId when catalogId is missing', () => {
+  const out = normalizeLibraryAlbum({
+    id: 'l.purchased',
+    attributes: {
+      name: 'Purchased',
+      artistName: 'X',
+      playParams: { id: 'l.purchased', kind: 'album', purchasedId: '987654321' },
+    },
+  })
+  assert.equal(out.catalogId, '987654321')
+  assert.equal(out.downloadable, true)
+})
+
+test('normalizeLibrarySong picks catalogId from playParams.id when it looks like a catalog id', () => {
+  const out = normalizeLibrarySong(
+    {
+      id: 'i.song',
+      attributes: {
+        name: 'Mystery Match',
+        artistName: 'X',
+        playParams: { id: '1453577124', kind: 'song' },
+      },
+    },
+    new Map(),
+  )
+  assert.equal(out.catalogId, '1453577124')
+  assert.equal(out.downloadable, true)
+})
+
+test('normalizeLibrarySong leaves uploaded tracks with library-prefixed playParams.id as null', () => {
+  const out = normalizeLibrarySong(
+    {
+      id: 'i.uploaded',
+      attributes: {
+        name: 'Demo',
+        artistName: 'Me',
+        playParams: { id: 'i.uploaded', kind: 'song', isLibrary: true },
+      },
+    },
+    new Map(),
+  )
+  assert.equal(out.catalogId, null)
+  assert.equal(out.downloadable, false)
+})
+
+test('isAppleCatalogId rejects library-prefixed ids and accepts numeric or pl. ids', async () => {
+  const { isAppleCatalogId } = await import('../lib/appleLibraryApi.mjs')
+  assert.equal(isAppleCatalogId('1234567890'), true)
+  assert.equal(isAppleCatalogId('pl.f4d106fed2bd41149aaacd893e8a9019'), true)
+  assert.equal(isAppleCatalogId('i.B1XAOXltZdxJZMr'), false)
+  assert.equal(isAppleCatalogId('l.purchased'), false)
+  assert.equal(isAppleCatalogId('p.userlist'), false)
+  assert.equal(isAppleCatalogId(''), false)
+  assert.equal(isAppleCatalogId(null), false)
+})
+
 test('normalizeLibraryPlaylist marks user-created playlists not downloadable', () => {
   const out = normalizeLibraryPlaylist({
     id: 'p.userlist',
