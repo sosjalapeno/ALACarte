@@ -1,6 +1,6 @@
 import { cx } from '../lib/cx'
 
-type Variant = 'accent' | 'ok' | 'bad' | 'warn'
+type Variant = 'accent' | 'ok' | 'bad' | 'warn' | 'muted'
 
 const variantClasses: Record<Variant, string> = {
   accent:
@@ -8,6 +8,7 @@ const variantClasses: Record<Variant, string> = {
   ok: 'border-emerald-400/35 bg-emerald-500/[0.18] text-emerald-400',
   bad: 'border-rose-400/35 bg-rose-500/[0.18] text-rose-400',
   warn: 'border-amber-400/35 bg-amber-500/[0.18] text-amber-400',
+  muted: 'border-white/15 bg-black/80 text-white/80',
 }
 
 type Props = {

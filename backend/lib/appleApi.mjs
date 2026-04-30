@@ -2,18 +2,18 @@ import { getBearerToken, invalidateBearerCache } from './appleToken.mjs'
 
 const BASE = 'https://amp-api.music.apple.com/v1/catalog'
 
-async function apiGet(url, { language = '' } = {}) {
+async function apiGet(url, { language = '', mediaUserToken, signal } = {}) {
   let token = await getBearerToken()
   const run = async (t) => {
-    return fetch(url, {
-      headers: {
-        Authorization: `Bearer ${t}`,
-        Origin: 'https://music.apple.com',
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept-Language': language || 'en-US',
-      },
-    })
+    const headers = {
+      Authorization: `Bearer ${t}`,
+      Origin: 'https://music.apple.com',
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      'Accept-Language': language || 'en-US',
+    }
+    if (mediaUserToken) headers['Music-User-Token'] = mediaUserToken
+    return fetch(url, { headers, signal })
   }
   let res = await run(token)
   if (res.status === 401 || res.status === 403) {
@@ -37,6 +37,8 @@ export async function searchCatalog({
   limit = 25,
   offset = 0,
   language = 'en-US',
+  mediaUserToken,
+  signal,
 }) {
   const qs = new URLSearchParams({
     term,
@@ -47,7 +49,7 @@ export async function searchCatalog({
     l: language,
   })
   const url = `${BASE}/${encodeURIComponent(storefront)}/search?${qs.toString()}`
-  return apiGet(url, { language })
+  return apiGet(url, { language, mediaUserToken, signal })
 }
 
 export async function getAlbum({ storefront, id, language = 'en-US' }) {
@@ -68,29 +70,6 @@ export async function getSong({ storefront, id, language = 'en-US' }) {
     l: language,
   })
   const url = `${BASE}/${encodeURIComponent(storefront)}/songs/${encodeURIComponent(id)}?${qs.toString()}`
-  return apiGet(url, { language })
-}
-
-export async function getSongsByIsrc({ storefront, isrcs, language = 'en-US' }) {
-  const values = [...new Set((isrcs || []).map((x) => String(x || '').trim()).filter(Boolean))]
-  if (values.length === 0) return { data: [] }
-  const qs = new URLSearchParams({
-    'filter[isrc]': values.join(','),
-    include: 'albums',
-    l: language,
-  })
-  const url = `${BASE}/${encodeURIComponent(storefront)}/songs?${qs.toString()}`
-  return apiGet(url, { language })
-}
-
-export async function getAlbumsByUpc({ storefront, upcs, language = 'en-US' }) {
-  const values = [...new Set((upcs || []).map((x) => String(x || '').trim()).filter(Boolean))]
-  if (values.length === 0) return { data: [] }
-  const qs = new URLSearchParams({
-    'filter[upc]': values.join(','),
-    l: language,
-  })
-  const url = `${BASE}/${encodeURIComponent(storefront)}/albums?${qs.toString()}`
   return apiGet(url, { language })
 }
 

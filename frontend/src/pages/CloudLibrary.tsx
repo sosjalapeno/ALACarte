@@ -286,7 +286,8 @@ export function CloudLibraryPage() {
     activeState.total === null && activeState.items.length === 0 && !activeState.error
   const showSkeleton = (activeState.loading || neverFetched) && !hasItems
   const totalLabel = activeState.total !== null ? activeState.total : activeState.items.length
-  const showBetaBanner = activeTab === 'playlists' || activeTab === 'songs'
+  const betaKind =
+    activeTab === 'albums' ? 'album' : activeTab === 'playlists' ? 'playlist' : 'song'
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 pt-4 md:pt-6">
@@ -390,27 +391,25 @@ export function CloudLibraryPage() {
         />
       </div>
 
-      {showBetaBanner && (
-        <div
-          className="flex items-start gap-3 rounded-app border border-amber-400/35 bg-amber-500/[0.10] px-4 py-2.5 text-sm text-amber-100/90 backdrop-blur-[10px]"
-          role="status"
-        >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden />
-          <div>
-            <b className="text-amber-200">Beta:</b> {activeTab === 'playlists' ? 'playlist' : 'song'}
-            {' '}downloads from Cloud are experimental and may not always behave as expected. Please{' '}
-            <a
-              href="https://github.com/sosjalapeno/alacarte/issues"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-amber-200 underline underline-offset-2 transition-colors hover:text-white"
-            >
-              report any issues
-            </a>
-            {' '}you find.
-          </div>
+      <div
+        className="flex items-start gap-3 rounded-app border border-amber-400/35 bg-amber-500/[0.10] px-4 py-2.5 text-sm text-amber-100/90 backdrop-blur-[10px]"
+        role="status"
+      >
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden />
+        <div>
+          <b className="text-amber-200">Beta:</b> {betaKind}
+          {' '}downloads from Cloud are experimental and may not always behave as expected. Please{' '}
+          <a
+            href="https://github.com/sosjalapeno/alacarte/issues"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-amber-200 underline underline-offset-2 transition-colors hover:text-white"
+          >
+            report any issues
+          </a>
+          {' '}you find.
         </div>
-      )}
+      </div>
 
       {activeState.error && <Badge variant="bad">{activeState.error}</Badge>}
 
@@ -771,7 +770,7 @@ function CloudSongRow({ song }: { song: CloudLibrarySong }) {
         </div>
       ) : !song.catalogId ? (
         <div className="shrink-0 pr-1">
-          <Badge>Unavailable</Badge>
+          <Badge variant="muted">Unavailable</Badge>
         </div>
       ) : (
         <div className="shrink-0 pr-1">
@@ -814,7 +813,10 @@ function UnsupportedTile({
 }) {
   const thumb = artworkUrl(artworkTemplate, 600)
   return (
-    <Card className="group relative block opacity-70" style={{ backgroundColor: '#1a1a1a' }}>
+    <Card
+      className={cx('group relative block', variant === 'ok' ? '' : 'opacity-70')}
+      style={{ backgroundColor: '#1a1a1a' }}
+    >
       <div className="relative aspect-square w-full overflow-hidden bg-black/50">
         {thumb ? (
           <img src={thumb} alt="" className="h-full w-full object-cover" />
