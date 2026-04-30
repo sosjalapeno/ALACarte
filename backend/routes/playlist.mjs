@@ -1,9 +1,34 @@
 import express from 'express'
 
 import { getPlaylist, normalizePlaylist } from '../lib/appleApi.mjs'
-import { readSettings } from '../lib/settingsStore.mjs'
+import { getLibraryPlaylistDetail } from '../lib/appleLibraryApi.mjs'
+import { readAppleCreds, readSettings } from '../lib/settingsStore.mjs'
 
 export const playlistRouter = express.Router()
+
+playlistRouter.get('/library/:libraryId', async (req, res) => {
+  try {
+    const libraryId = String(req.params.libraryId || '').trim()
+    if (!libraryId) return res.status(400).json({ error: 'libraryId required' })
+    const settings = await readSettings()
+    const creds = await readAppleCreds()
+    if (!creds.mediaUserToken) {
+      return res.status(412).json({ error: 'media-user-token not configured' })
+    }
+    const playlist = await getLibraryPlaylistDetail({
+      libraryId,
+      mediaUserToken: creds.mediaUserToken,
+      language: settings.language || 'en-US',
+    })
+    if (!playlist) return res.status(404).json({ error: 'playlist not found' })
+    res.json({ playlist, storefront: settings.storefront || 'us' })
+  } catch (err) {
+    if (err.code === 'NO_MEDIA_USER_TOKEN' || err.code === 'MEDIA_USER_TOKEN_REJECTED') {
+      return res.status(err.statusCode || 412).json({ error: err.message })
+    }
+    res.status(502).json({ error: err.message })
+  }
+})
 
 playlistRouter.get('/:id', async (req, res) => {
   try {

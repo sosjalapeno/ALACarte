@@ -41,13 +41,18 @@ downloadRouter.post('/song', async (req, res) => {
 
 downloadRouter.post('/playlist', async (req, res) => {
   try {
-    const { playlistId, storefront, quality } = req.body || {}
-    if (!playlistId) return res.status(400).json({ error: 'playlistId required' })
-    const job = await enqueuePlaylist({ playlistId, storefront, quality })
+    const { playlistId, libraryId, storefront, quality } = req.body || {}
+    if (!playlistId && !libraryId) {
+      return res.status(400).json({ error: 'playlistId or libraryId required' })
+    }
+    const job = await enqueuePlaylist({ playlistId, libraryId, storefront, quality })
     res.status(202).json({ job })
   } catch (err) {
     if (err?.statusCode === 409 || err?.code === 'ALREADY_IN_LIBRARY') {
       return res.status(409).json({ error: err.message || 'Already in library' })
+    }
+    if (err?.statusCode === 412 || err?.code === 'NO_MEDIA_USER_TOKEN') {
+      return res.status(412).json({ error: err.message })
     }
     res.status(500).json({ error: err.message })
   }

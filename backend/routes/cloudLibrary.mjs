@@ -98,20 +98,31 @@ cloudLibraryRouter.get('/playlists', (req, res) => listKind(req, res, 'playlists
 cloudLibraryRouter.get('/songs', (req, res) => listKind(req, res, 'songs'))
 
 async function enqueueByKind(kind, item, { storefront, quality }) {
+  if (kind === 'playlists') {
+    if (item.catalogId) {
+      const job = await enqueuePlaylist({
+        playlistId: item.catalogId,
+        storefront,
+        quality,
+      })
+      return { job }
+    }
+    if (item.libraryId) {
+      const job = await enqueuePlaylist({
+        libraryId: item.libraryId,
+        storefront,
+        quality,
+      })
+      return { job }
+    }
+    return { skipped: 'no-catalog-id' }
+  }
   if (!item.catalogId) {
     return { skipped: 'no-catalog-id' }
   }
   if (kind === 'albums') {
     const job = await enqueueAlbum({
       albumId: item.catalogId,
-      storefront,
-      quality,
-    })
-    return { job }
-  }
-  if (kind === 'playlists') {
-    const job = await enqueuePlaylist({
-      playlistId: item.catalogId,
       storefront,
       quality,
     })
@@ -161,7 +172,11 @@ cloudLibraryRouter.post('/download-all', async (req, res) => {
       language: settings.language,
     })) {
       scanned += 1
-      if (!item.catalogId || !item.downloadable) {
+      const enqueueable =
+        kind === 'playlists'
+          ? item.catalogId || item.libraryId
+          : item.catalogId && item.downloadable
+      if (!enqueueable) {
         unsupported += 1
         continue
       }

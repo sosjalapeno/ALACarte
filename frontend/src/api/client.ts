@@ -67,6 +67,30 @@ export type PlaylistDetail = Playlist & {
   tracks: PlaylistTrack[]
 }
 
+export type LibraryPlaylistTrack = PlaylistTrack & {
+  libraryId: string
+  catalogId: string | null
+  downloadable: boolean
+}
+
+export type LibraryPlaylistDetail = {
+  libraryId: string
+  catalogId: string | null
+  name: string
+  curatorName: string
+  description: string
+  artworkTemplate: string | null
+  artworkColor: string | null
+  isUserCreated: boolean
+  trackCount: number
+  tracks: LibraryPlaylistTrack[]
+  hasLossless: boolean
+  hasHiRes: boolean
+  hasAtmos: boolean
+  undownloadableCount: number
+  downloadable: boolean
+}
+
 export type AlbumTrack = {
   id: string
   name: string
@@ -99,6 +123,7 @@ export type Job = {
   albumId: string
   songId?: string | null
   playlistId?: string | null
+  libraryPlaylistId?: string | null
   albumTitle: string
   artist: string
   artistId?: string | null
@@ -488,6 +513,10 @@ export const api = {
     http<{ playlist: PlaylistDetail; storefront: string }>(
       `/api/playlist/${encodeURIComponent(id)}`,
     ),
+  libraryPlaylist: (libraryId: string) =>
+    http<{ playlist: LibraryPlaylistDetail; storefront: string }>(
+      `/api/playlist/library/${encodeURIComponent(libraryId)}`,
+    ),
   following: () => http<{ artists: FollowedArtist[] }>('/api/following'),
   followedArtist: (id: string) =>
     http<{ artist: FollowedArtist | null }>(
@@ -588,6 +617,11 @@ export const api = {
     http<{ job: Job }>('/api/download/playlist', {
       method: 'POST',
       body: JSON.stringify({ playlistId, storefront, quality }),
+    }),
+  enqueueLibraryPlaylist: (libraryId: string, storefront?: string, quality?: QualityPreference) =>
+    http<{ job: Job }>('/api/download/playlist', {
+      method: 'POST',
+      body: JSON.stringify({ libraryId, storefront, quality }),
     }),
   cancel: (id: string) =>
     http<{ ok: boolean }>(`/api/download/${encodeURIComponent(id)}`, {

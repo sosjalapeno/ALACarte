@@ -105,6 +105,31 @@ test('getAlbumTrackPresence does not count standard tracks for a deluxe edition 
   })
 })
 
+test('scanLibrary registers both catalog and library ids written into a playlist m3u8', async () => {
+  await withMusicRoot(async (root, mod) => {
+    const playlistsDir = path.join(root, 'Playlists')
+    await fsp.mkdir(playlistsDir, { recursive: true })
+    const lines = [
+      '#EXTM3U',
+      '#PLAYLIST:My Mix',
+      '#ALACARTE_PLAYLIST_ID:pl.abcdef0123456789',
+      '#ALACARTE_LIBRARY_PLAYLIST_ID:p.userlist',
+      '../Future/Singles/Trip.flac',
+    ]
+    await fsp.writeFile(
+      path.join(playlistsDir, 'My Mix.m3u8'),
+      lines.join('\n') + '\n',
+    )
+
+    const idx = await mod.scanLibrary()
+    assert.ok(idx.playlistIds.has('pl.abcdef0123456789'))
+    assert.ok(idx.playlistIds.has('p.userlist'))
+    assert.equal(await mod.isPlaylistInLibrary('pl.abcdef0123456789', idx), true)
+    assert.equal(await mod.isPlaylistInLibrary('p.userlist', idx), true)
+    assert.equal(await mod.isPlaylistInLibrary('something-else', idx), false)
+  })
+})
+
 test('getAlbumTrackPresence still counts singles regardless of album folder', async () => {
   await withMusicRoot(async (root, mod) => {
     const singlesDir = path.join(root, 'Mad Season', 'Singles')

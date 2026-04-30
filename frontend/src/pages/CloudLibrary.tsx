@@ -576,29 +576,25 @@ function PlaylistGrid({ items }: { items: CloudLibraryPlaylist[] }) {
   return (
     <StaggeredList className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 md:gap-4">
       {items.map((it) => {
-        if (!it.catalogId) {
-          return (
-            <StaggeredItem key={it.libraryId}>
-              <UnsupportedTile
-                title={it.name}
-                subtitle={it.curatorName}
-                artworkTemplate={it.artworkTemplate}
-                kind="User-created"
-              />
-            </StaggeredItem>
-          )
-        }
         const playlist: Playlist = {
-          id: it.catalogId,
+          id: it.catalogId || it.libraryId,
           name: it.name,
           curatorName: it.curatorName,
           artworkTemplate: it.artworkTemplate,
           artworkColor: it.artworkColor || null,
           description: it.description,
         }
+        const libraryHref = it.catalogId
+          ? `/playlist/${it.catalogId}`
+          : `/playlist/library/${it.libraryId}`
         return (
           <StaggeredItem key={it.libraryId}>
-            <PlaylistCard playlist={playlist} />
+            <PlaylistCard
+              playlist={playlist}
+              href={libraryHref}
+              libraryId={it.catalogId ? null : it.libraryId}
+              userCreatedBadge={it.isUserCreated}
+            />
           </StaggeredItem>
         )
       })}

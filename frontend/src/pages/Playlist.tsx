@@ -6,6 +6,7 @@ import {
   api,
   artworkSrcSet,
   artworkUrl,
+  type LibraryPlaylistDetail,
   type PlaylistDetail,
 } from '../api/client'
 import { useQueue } from '../hooks/useQueue'
@@ -16,6 +17,10 @@ import { StaggeredList, StaggeredItem } from '../components/StaggeredList'
 import { ProgressBar } from '../components/ProgressBar'
 import { Button } from '../components/Button'
 
+type AnyPlaylist =
+  | (PlaylistDetail & { libraryId?: undefined; isUserCreated?: undefined; undownloadableCount?: undefined })
+  | (LibraryPlaylistDetail & { url?: undefined; lastModifiedDate?: undefined })
+
 function formatDur(ms: number | undefined) {
   if (!ms || !Number.isFinite(ms)) return '—'
   const total = Math.floor(ms / 1000)
@@ -25,8 +30,10 @@ function formatDur(ms: number | undefined) {
 }
 
 export function PlaylistPage() {
-  const { id } = useParams<{ id: string }>()
-  const [playlist, setPlaylist] = useState<PlaylistDetail | null>(null)
+  const params = useParams<{ id?: string; libraryId?: string }>()
+  const libraryId = params.libraryId || null
+  const catalogId = libraryId ? null : params.id || null
+  const [playlist, setPlaylist] = useState<AnyPlaylist | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [enqueueing, setEnqueueing] = useState(false)
   const { jobs } = useQueue()
@@ -36,20 +43,27 @@ export function PlaylistPage() {
       jobs.find(
         (j) =>
           j.kind === 'playlist' &&
-          j.playlistId === id &&
+          ((libraryId && j.libraryPlaylistId === libraryId) ||
+            (catalogId && j.playlistId === catalogId)) &&
           (j.status === 'queued' || j.status === 'running'),
       ) ||
-      jobs.find((j) => j.kind === 'playlist' && j.playlistId === id && j.status === 'done'),
-    [jobs, id],
+      jobs.find(
+        (j) =>
+          j.kind === 'playlist' &&
+          ((libraryId && j.libraryPlaylistId === libraryId) ||
+            (catalogId && j.playlistId === catalogId)) &&
+          j.status === 'done',
+      ),
+    [jobs, catalogId, libraryId],
   )
 
   useEffect(() => {
     let cancelled = false
-    if (!id) return
-    api
-      .playlist(id)
+    if (!libraryId && !catalogId) return
+    const loader = libraryId ? api.libraryPlaylist(libraryId) : api.playlist(catalogId!)
+    loader
       .then((r) => {
-        if (!cancelled) setPlaylist(r.playlist)
+        if (!cancelled) setPlaylist(r.playlist as AnyPlaylist)
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || 'Failed to load')
@@ -57,7 +71,7 @@ export function PlaylistPage() {
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [catalogId, libraryId])
 
   const coverBig = artworkUrl(playlist?.artworkTemplate, 600)
   const bgColor = playlist?.artworkColor ? `#${playlist.artworkColor}` : '#1a1a1a'
@@ -77,13 +91,28 @@ export function PlaylistPage() {
     if (!playlist) return
     setEnqueueing(true)
     try {
-      await api.enqueuePlaylist(playlist.id)
+      if (libraryId) {
+        await api.enqueueLibraryPlaylist(libraryId)
+      } else if (catalogId) {
+        await api.enqueuePlaylist(catalogId)
+      }
     } catch (err: any) {
       setError(err?.message || 'Enqueue failed')
     } finally {
       setEnqueueing(false)
     }
   }
+
+  const isLibraryMode = Boolean(libraryId)
+  const undownloadable = isLibraryMode
+    ? (playlist as LibraryPlaylistDetail | null)?.undownloadableCount || 0
+    : 0
+  const isUserCreated = isLibraryMode
+    ? Boolean((playlist as LibraryPlaylistDetail | null)?.isUserCreated)
+    : false
+  const downloadable = isLibraryMode
+    ? Boolean((playlist as LibraryPlaylistDetail | null)?.downloadable)
+    : true
 
   return (
     <div className="mx-auto w-full max-w-6xl pt-4 md:pt-6">
@@ -115,7 +144,9 @@ export function PlaylistPage() {
               </div>
             </div>
             <div className="min-w-0 flex-1 flex flex-col">
-              <div className="text-xs uppercase tracking-wider text-white/55 mb-1">Playlist</div>
+              <div className="text-xs uppercase tracking-wider text-white/55 mb-1">
+                {isUserCreated ? 'Your Playlist' : 'Playlist'}
+              </div>
               <h1 className="text-2xl md:text-4xl font-bold tracking-tight">{playlist.name}</h1>
               <div className="mt-1 text-white/70">
                 {playlist.curatorName}
@@ -128,6 +159,11 @@ export function PlaylistPage() {
                 {playlist.hasHiRes && <Badge>Hi-Res Lossless</Badge>}
                 {playlist.hasLossless && !playlist.hasHiRes && <Badge>Lossless</Badge>}
                 {playlist.hasAtmos && <Badge>Dolby Atmos</Badge>}
+                {undownloadable > 0 && (
+                  <Badge variant="warn">
+                    {undownloadable} not on Apple Music
+                  </Badge>
+                )}
               </div>
               {(existingPlaylistJob?.status === 'queued' ||
                 existingPlaylistJob?.status === 'running') && (
@@ -144,6 +180,7 @@ export function PlaylistPage() {
                     onClick={onDownload}
                     disabled={
                       enqueueing ||
+                      !downloadable ||
                       (existingPlaylistJob && existingPlaylistJob.status !== 'failed')
                     }
                     className="flex-1 md:min-w-[200px] md:flex-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -155,7 +192,9 @@ export function PlaylistPage() {
                         ? 'Queued'
                         : existingPlaylistJob?.status === 'running'
                           ? 'Downloading…'
-                          : 'Download Playlist'}
+                          : !downloadable
+                            ? 'No downloadable tracks'
+                            : 'Download Playlist'}
                   </Button>
                 </div>
               </div>

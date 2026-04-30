@@ -13,6 +13,7 @@ import {
   normalizeAlbum,
   normalizePlaylist,
 } from './appleApi.mjs'
+import { getLibraryPlaylistDetail } from './appleLibraryApi.mjs'
 import { triggerNavidromeScan } from './navidromeApi.mjs'
 import { writeAmdpConfig, spawnAmdp } from './amdpRunner.mjs'
 import {
@@ -154,6 +155,7 @@ function jobPublic(j) {
     albumId: j.albumId,
     songId: j.songId || null,
     playlistId: j.playlistId || null,
+    libraryPlaylistId: j.libraryPlaylistId || null,
     albumTitle: j.albumTitle,
     artist: j.artist,
     artistId: j.artistId || null,
@@ -272,8 +274,13 @@ export async function enqueueAlbum({ albumId, storefront, quality, expectedArtis
   return jobPublic(job)
 }
 
-export async function enqueuePlaylist({ playlistId, storefront, quality }) {
-  if (!playlistId) throw new Error('playlistId required')
+export async function enqueuePlaylist({ playlistId, libraryId, storefront, quality }) {
+  if (!playlistId && !libraryId) {
+    throw new Error('playlistId or libraryId required')
+  }
+  if (libraryId) {
+    return enqueueLibraryPlaylist({ libraryId, storefront, quality })
+  }
 
   for (const j of state.jobs.values()) {
     if (
@@ -311,6 +318,7 @@ export async function enqueuePlaylist({ playlistId, storefront, quality }) {
     progress: 0,
     albumId: '',
     playlistId,
+    libraryPlaylistId: null,
     sourceUrl:
       meta?.url ||
       `https://music.apple.com/${encodeURIComponent(storefront || settings.storefront || 'us')}/playlist/_/${encodeURIComponent(playlistId)}`,
@@ -333,6 +341,96 @@ export async function enqueuePlaylist({ playlistId, storefront, quality }) {
     error: null,
     finalDir: null,
     stats: { total: meta?.trackCount || meta?.tracks?.length || 0, done: 0, failed: 0 },
+  }
+
+  state.jobs.set(id, job)
+  state.queue.push(id)
+  emitEvent('job.created', jobPublic(job))
+  setImmediate(tickQueue)
+  return jobPublic(job)
+}
+
+async function enqueueLibraryPlaylist({ libraryId, storefront, quality }) {
+  if (!libraryId) throw new Error('libraryId required')
+
+  for (const j of state.jobs.values()) {
+    if (
+      j.kind === 'playlist' &&
+      j.libraryPlaylistId === libraryId &&
+      (j.status === 'queued' || j.status === 'running')
+    ) {
+      return jobPublic(j)
+    }
+  }
+
+  if (await isPlaylistInLibrary(libraryId)) {
+    throw alreadyInLibraryError('Already in library')
+  }
+
+  const settings = await readSettings()
+  const creds = await readAppleCreds()
+  if (!creds.mediaUserToken) {
+    const err = new Error('media-user-token not configured')
+    err.code = 'NO_MEDIA_USER_TOKEN'
+    err.statusCode = 412
+    throw err
+  }
+
+  const detail = await getLibraryPlaylistDetail({
+    libraryId,
+    mediaUserToken: creds.mediaUserToken,
+    language: settings.language,
+  })
+  if (!detail) {
+    throw new Error('library playlist not found')
+  }
+  if (detail.catalogId && (await isPlaylistInLibrary(detail.catalogId))) {
+    throw alreadyInLibraryError('Already in library')
+  }
+  const playlistTracks = detail.tracks
+    .filter((t) => t.catalogId)
+    .map((t) => ({
+      catalogId: t.catalogId,
+      name: t.name,
+      artistName: t.artistName,
+      albumName: t.albumName,
+      durationMs: t.durationMs,
+    }))
+  if (playlistTracks.length === 0) {
+    throw new Error('playlist has no downloadable catalog tracks')
+  }
+
+  const id = crypto.randomUUID()
+  const job = {
+    id,
+    kind: 'playlist',
+    status: 'queued',
+    progress: 0,
+    albumId: '',
+    playlistId: detail.catalogId || null,
+    libraryPlaylistId: libraryId,
+    sourceUrl: null,
+    albumTitle: detail.name || 'Untitled playlist',
+    artist: detail.curatorName || 'You',
+    artistId: null,
+    year: null,
+    artworkUrl: detail.artworkTemplate
+      ? detail.artworkTemplate
+          .replace('{w}', '600')
+          .replace('{h}', '600')
+          .replace('{f}', 'jpg')
+      : null,
+    storefront: storefront || settings.storefront || 'us',
+    quality: normalizeQuality(quality, settings.quality),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    currentTrack: null,
+    message: 'Queued',
+    error: null,
+    finalDir: null,
+    playlistTracks,
+    undownloadableCount: detail.undownloadableCount,
+    stats: { total: playlistTracks.length, done: 0, failed: 0 },
   }
 
   state.jobs.set(id, job)
@@ -529,6 +627,22 @@ async function runJob(job) {
       job.missingTracks.length > 0
     ) {
       await runPartialAlbumFill({
+        job,
+        jobStaging,
+        settings,
+        creds,
+        quality,
+        progressState,
+      })
+      return
+    }
+
+    if (
+      job.kind === 'playlist' &&
+      Array.isArray(job.playlistTracks) &&
+      job.playlistTracks.length > 0
+    ) {
+      await runLibraryPlaylistFill({
         job,
         jobStaging,
         settings,
@@ -1033,6 +1147,189 @@ async function runPartialAlbumFill({
   triggerNavidromeScan().catch(console.error)
 }
 
+async function runLibraryPlaylistFill({
+  job,
+  jobStaging,
+  settings,
+  creds,
+  quality,
+  progressState,
+}) {
+  const tracks = job.playlistTracks || []
+  if (tracks.length === 0) {
+    throw new Error('library playlist has no tracks to download')
+  }
+
+  progressState.downloadTotal = tracks.length
+  progressState.downloadDone = 0
+  progressState.downloadPartial = 0
+  progressState.lockDownloadTotal = true
+  if (progressState.convertEnabled) {
+    progressState.convertTotal = tracks.length
+    progressState.convertDone = 0
+  }
+  job.stats.total = tracks.length
+  job.stats.done = 0
+  applyProgress(job, progressState, {
+    message: `Downloading playlist (0/${tracks.length})`,
+    currentTrack: null,
+  })
+
+  const importedPaths = []
+
+  for (let i = 0; i < tracks.length; i += 1) {
+    throwIfCancelled(job)
+    const track = tracks[i]
+    const trackStaging = path.join(jobStaging, `t${i}`)
+    await ensureDir(trackStaging)
+    await writeAmdpConfig({
+      settings,
+      mediaUserToken: creds.mediaUserToken,
+      stagingRoot: trackStaging,
+    })
+
+    applyProgress(job, progressState, {
+      message: `Downloading playlist (${i}/${tracks.length})`,
+      currentTrack: track.name || null,
+    })
+
+    let albumCatalogId = null
+    try {
+      const raw = await getSong({
+        storefront: job.storefront,
+        id: track.catalogId,
+        language: settings.language,
+      })
+      const songData = raw?.data?.[0]
+      const albumRel = songData?.relationships?.albums?.data?.[0]?.id
+      if (albumRel) albumCatalogId = String(albumRel)
+    } catch (err) {
+      console.error('library playlist song lookup failed', track.catalogId, err.message)
+    }
+    if (!albumCatalogId) {
+      job.stats.failed = (job.stats.failed || 0) + 1
+      progressState.downloadDone = i + 1
+      applyProgress(job, progressState, {
+        message: `Skipped ${track.name || track.catalogId} (no album)`,
+      })
+      continue
+    }
+
+    const url = `https://music.apple.com/${encodeURIComponent(job.storefront)}/album/_/${encodeURIComponent(albumCatalogId)}?i=${encodeURIComponent(track.catalogId)}`
+    progressState.downloadDone = i
+    progressState.downloadPartial = 0
+    const sub = await runAmdpDownload({
+      job,
+      jobStaging: trackStaging,
+      url,
+      quality,
+      isSong: true,
+      progressState,
+    })
+    const combined = `${sub.stdout}\n${sub.stderr}`
+    if (
+      quality === 'atmos' &&
+      (await shouldFallbackAtmosToFlac(sub, combined, trackStaging))
+    ) {
+      await fsp.rm(trackStaging, { recursive: true, force: true })
+      await ensureDir(trackStaging)
+      await writeAmdpConfig({
+        settings,
+        mediaUserToken: creds.mediaUserToken,
+        stagingRoot: trackStaging,
+      })
+      progressState.downloadDone = i
+      progressState.downloadPartial = 0
+      const retry = await runAmdpDownload({
+        job,
+        jobStaging: trackStaging,
+        url,
+        quality: 'flac',
+        isSong: true,
+        progressState,
+      })
+      assertAmdpResult(retry, `${retry.stdout}\n${retry.stderr}`)
+    } else {
+      assertAmdpResult(sub, combined)
+    }
+
+    if (progressState.convertEnabled) {
+      const albumDirs = await collectAlbumStagingDirs(trackStaging)
+      for (const albumPath of albumDirs) {
+        const conv = await convertDirToFlac(albumPath, {})
+        progressState.convertDone = Math.min(
+          progressState.convertTotal,
+          progressState.convertDone + (conv.converted || 0),
+        )
+      }
+      applyProgress(job, progressState)
+    }
+
+    const importedHere = await importPlaylistTracks({
+      job,
+      jobStaging: trackStaging,
+      onProgress: () => {},
+    })
+    for (const p of importedHere) importedPaths.push(p)
+
+    progressState.downloadDone = i + 1
+    progressState.downloadPartial = 0
+    job.stats.done = i + 1
+    applyProgress(job, progressState, {
+      message: `Downloading playlist (${i + 1}/${tracks.length})`,
+    })
+  }
+
+  if (importedPaths.length === 0) {
+    throw new Error('no tracks were imported from playlist')
+  }
+
+  progressState.finalizeProgress = Math.max(progressState.finalizeProgress, 0.93)
+  applyProgress(job, progressState, {
+    message: 'Writing playlist file',
+    currentTrack: null,
+  })
+  const playlistPath = await writePlaylistM3U({
+    playlistName: job.albumTitle,
+    playlistId: job.playlistId,
+    libraryPlaylistId: job.libraryPlaylistId,
+    tracks: importedPaths,
+  })
+
+  await fsp.rm(jobStaging, { recursive: true, force: true }).catch(() => null)
+
+  progressState.finalizeProgress = 1
+  applyProgress(job, progressState, {
+    message: 'Finalizing import',
+    currentTrack: null,
+  })
+  updateJob(job.id, {
+    status: 'done',
+    progress: 100,
+    message: `Imported ${importedPaths.length} track${importedPaths.length === 1 ? '' : 's'}`,
+    finalDir: path.dirname(playlistPath),
+  })
+  invalidateLibraryCache()
+  await appendHistory(job)
+  triggerNavidromeScan().catch(console.error)
+}
+
+async function collectAlbumStagingDirs(root) {
+  const out = []
+  const artistEntries = await fsp.readdir(root, { withFileTypes: true }).catch(() => [])
+  for (const artist of artistEntries) {
+    if (!artist.isDirectory()) continue
+    const artistPath = path.join(root, artist.name)
+    const albumEntries = await fsp.readdir(artistPath, { withFileTypes: true }).catch(() => [])
+    for (const album of albumEntries) {
+      if (album.isDirectory()) {
+        out.push(path.join(artistPath, album.name))
+      }
+    }
+  }
+  return out
+}
+
 function handleAmdpLine(job, line, which, progressState) {
   let matchedTrackHeader = false
 
@@ -1527,7 +1824,7 @@ async function copyFolderArtIfAny(srcDir, destDir) {
   await fsp.copyFile(src, dest).catch(() => {})
 }
 
-async function writePlaylistM3U({ playlistName, playlistId, tracks }) {
+async function writePlaylistM3U({ playlistName, playlistId, libraryPlaylistId, tracks }) {
   const playlistsDir = path.join(MUSIC_ROOT, 'Playlists')
   await ensureDir(playlistsDir)
   const base = sanitizeSegment(playlistName || 'Playlist')
@@ -1536,6 +1833,9 @@ async function writePlaylistM3U({ playlistName, playlistId, tracks }) {
   const lines = ['#EXTM3U', `#PLAYLIST:${playlistName || 'Playlist'}`]
   if (playlistId) {
     lines.push(`#ALACARTE_PLAYLIST_ID:${playlistId}`)
+  }
+  if (libraryPlaylistId) {
+    lines.push(`#ALACARTE_LIBRARY_PLAYLIST_ID:${libraryPlaylistId}`)
   }
   for (const absPath of tracks) {
     const rel = path

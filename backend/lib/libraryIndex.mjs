@@ -40,8 +40,10 @@ export async function scanLibrary() {
   const playlistEntries = await readDirSafe(playlistsDir)
   for (const entry of playlistEntries) {
     if (!entry.isFile() || !/\.m3u8$/i.test(entry.name)) continue
-    const id = await readPlaylistId(path.join(playlistsDir, entry.name))
-    if (id) playlistIds.add(id)
+    const ids = await readPlaylistIds(path.join(playlistsDir, entry.name))
+    for (const id of ids) {
+      if (id) playlistIds.add(id)
+    }
   }
 
   const artists = await readDirSafe(MUSIC_ROOT)
@@ -163,25 +165,26 @@ export function songNameFromFilename(filename) {
   return base.trim()
 }
 
-async function readPlaylistId(filePath) {
+async function readPlaylistIds(filePath) {
+  const ids = []
   try {
     const fh = await fsp.open(filePath, 'r')
     try {
       const buf = Buffer.alloc(2048)
       const { bytesRead } = await fh.read(buf, 0, buf.length, 0)
       const head = buf.subarray(0, bytesRead).toString('utf8')
-      const lines = head.split(/\r?\n/, 12)
+      const lines = head.split(/\r?\n/, 24)
       for (const line of lines) {
-        const m = line.match(/^#ALACARTE_PLAYLIST_ID:(.+)$/)
-        if (m) return m[1].trim()
+        const m = line.match(/^#ALACARTE_(?:LIBRARY_)?PLAYLIST_ID:(.+)$/)
+        if (m) ids.push(m[1].trim())
       }
     } finally {
       await fh.close()
     }
   } catch {
-    /* ignore */
+    return ids
   }
-  return null
+  return ids
 }
 
 export async function isPlaylistInLibrary(playlistId, preScannedIndex = null) {

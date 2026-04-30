@@ -40,7 +40,11 @@ export function QueueItem({ job }: Props) {
   }
 
   const isPlaylist = job.kind === 'playlist'
-  const playlistHref = job.playlistId ? `/playlist/${job.playlistId}` : null
+  const playlistHref = job.playlistId
+    ? `/playlist/${job.playlistId}`
+    : job.libraryPlaylistId
+      ? `/playlist/library/${job.libraryPlaylistId}`
+      : null
 
   return (
     <Card hover className="flex items-center gap-3 p-3 md:gap-4">

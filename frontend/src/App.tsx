@@ -167,6 +167,7 @@ function AuthedApp() {
               <Route path="/cloud-library" element={<PageWrapper><CloudLibraryPage /></PageWrapper>} />
               <Route path="/album/:id" element={<PageWrapper><AlbumPage /></PageWrapper>} />
               <Route path="/artist/:id" element={<PageWrapper><ArtistPage /></PageWrapper>} />
+              <Route path="/playlist/library/:libraryId" element={<PageWrapper><PlaylistPage /></PageWrapper>} />
               <Route path="/playlist/:id" element={<PageWrapper><PlaylistPage /></PageWrapper>} />
               <Route path="/status" element={<PageWrapper><StatusPage /></PageWrapper>} />
               <Route path="/settings" element={<PageWrapper><SettingsPage /></PageWrapper>} />

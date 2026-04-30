@@ -11,26 +11,37 @@ import { DownloadButton } from './DownloadButton'
 
 type Props = {
   playlist: Playlist
+  href?: string
+  libraryId?: string | null
+  userCreatedBadge?: boolean
 }
 
-export function PlaylistCard({ playlist }: Props) {
+export function PlaylistCard({ playlist, href, libraryId = null, userCreatedBadge = false }: Props) {
   const { jobs } = useQueue()
   const { ready, isPlaylistInLibrary, verifyPlaylistPresence } = useLibraryPresence()
   const touchMode = useTouchMode()
-  const blocked = isPlaylistInLibrary(playlist)
+  const presenceLookup = libraryId ? { id: libraryId } : playlist
+  const blocked = isPlaylistInLibrary(presenceLookup)
+  const targetHref = href || `/playlist/${playlist.id}`
   const matching = useMemo(() => {
     const active = jobs.find(
       (j) =>
         j.kind === 'playlist' &&
-        j.playlistId === playlist.id &&
+        ((libraryId && j.libraryPlaylistId === libraryId) || j.playlistId === playlist.id) &&
         (j.status === 'queued' || j.status === 'running'),
     )
     if (active) return active
     if (blocked) {
-      return jobs.find((j) => j.kind === 'playlist' && j.playlistId === playlist.id) || null
+      return (
+        jobs.find(
+          (j) =>
+            j.kind === 'playlist' &&
+            ((libraryId && j.libraryPlaylistId === libraryId) || j.playlistId === playlist.id),
+        ) || null
+      )
     }
     return null
-  }, [jobs, playlist.id, blocked])
+  }, [jobs, playlist.id, libraryId, blocked])
   const busyOrDone =
     !!matching &&
     (matching.status === 'running' ||
@@ -47,7 +58,7 @@ export function PlaylistCard({ playlist }: Props) {
       style={{ backgroundColor: bgColor }}
     >
       <div className="relative aspect-square w-full overflow-hidden bg-black/50">
-        <Link to={`/playlist/${playlist.id}`} className="block h-full w-full">
+        <Link to={targetHref} className="block h-full w-full">
           {thumb ? (
             <img
               src={thumb}
@@ -62,11 +73,18 @@ export function PlaylistCard({ playlist }: Props) {
               ♫
             </div>
           )}
-          {blocked && (
-            <div className="absolute top-2 left-2 z-10">
-              <div className="rounded bg-emerald-500/90 backdrop-blur-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm ring-1 ring-white/20">
-                In Library
-              </div>
+          {(blocked || userCreatedBadge) && (
+            <div className="absolute top-2 left-2 z-10 flex flex-col items-start gap-1">
+              {blocked && (
+                <div className="rounded bg-emerald-500/90 backdrop-blur-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm ring-1 ring-white/20">
+                  In Library
+                </div>
+              )}
+              {userCreatedBadge && !blocked && (
+                <div className="rounded bg-black/80 backdrop-blur-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/85 shadow-sm ring-1 ring-white/15">
+                  Yours
+                </div>
+              )}
             </div>
           )}
         </Link>
@@ -74,13 +92,17 @@ export function PlaylistCard({ playlist }: Props) {
           <DownloadButton
             job={matching}
             onStart={async () => {
-              if (!ready && (await verifyPlaylistPresence(playlist))) return false
+              if (!ready && (await verifyPlaylistPresence(presenceLookup))) return false
               try {
-                await api.enqueuePlaylist(playlist.id)
+                if (libraryId) {
+                  await api.enqueueLibraryPlaylist(libraryId)
+                } else {
+                  await api.enqueuePlaylist(playlist.id)
+                }
                 return true
               } catch (err: any) {
                 if (/already in library/i.test(String(err?.message || ''))) {
-                  await verifyPlaylistPresence(playlist)
+                  await verifyPlaylistPresence(presenceLookup)
                   return false
                 }
                 throw err
@@ -98,7 +120,7 @@ export function PlaylistCard({ playlist }: Props) {
       </div>
       <div className="p-3 backdrop-blur-md bg-black/30">
         <div className="truncate text-sm font-medium text-white">
-          <Link to={`/playlist/${playlist.id}`} className="hover:text-accent transition-colors">
+          <Link to={targetHref} className="hover:text-accent transition-colors">
             {playlist.name}
           </Link>
         </div>

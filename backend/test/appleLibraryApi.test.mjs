@@ -5,6 +5,7 @@ import {
   normalizeLibraryAlbum,
   normalizeLibraryPlaylist,
   normalizeLibrarySong,
+  normalizeLibraryTrack,
   __test__,
 } from '../lib/appleLibraryApi.mjs'
 
@@ -178,6 +179,38 @@ test('normalizeLibrarySong is downloadable when catalogId is present, with album
   assert.equal(orphan.catalogId, null)
   assert.equal(orphan.catalogAlbumId, null)
   assert.equal(orphan.downloadable, false)
+})
+
+test('normalizeLibraryTrack uses catalog id when present and marks downloadable accordingly', () => {
+  const matched = normalizeLibraryTrack({
+    id: 'i.song1',
+    type: 'library-songs',
+    attributes: {
+      name: 'Anti-Hero',
+      artistName: 'Ghais Guevara',
+      albumName: 'Goyard & The Kayfabe Reveal',
+      durationInMillis: 180_000,
+      playParams: { id: 'i.song1', kind: 'song', catalogId: '1568157108' },
+    },
+  })
+  assert.equal(matched.id, '1568157108')
+  assert.equal(matched.libraryId, 'i.song1')
+  assert.equal(matched.catalogId, '1568157108')
+  assert.equal(matched.downloadable, true)
+  assert.equal(matched.durationMs, 180_000)
+
+  const upload = normalizeLibraryTrack({
+    id: 'i.upload',
+    type: 'library-songs',
+    attributes: {
+      name: 'Demo',
+      artistName: 'Me',
+      playParams: { id: 'i.upload', kind: 'song', isLibrary: true },
+    },
+  })
+  assert.equal(upload.id, 'i.upload')
+  assert.equal(upload.catalogId, null)
+  assert.equal(upload.downloadable, false)
 })
 
 test('buildLibraryUrl clamps limit and offset and sets include=catalog', () => {

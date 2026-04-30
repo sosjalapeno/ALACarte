@@ -212,6 +212,121 @@ export async function* iterateLibrary(kind, { mediaUserToken, language, pageSize
   }
 }
 
+export function normalizeLibraryTrack(raw) {
+  if (!raw) return null
+  const a = raw.attributes || {}
+  const catalogId = pickCatalogId(raw)
+  return {
+    id: catalogId || raw.id,
+    libraryId: raw.id,
+    catalogId,
+    name: a.name || 'Unknown song',
+    artistName: a.artistName || 'Unknown artist',
+    albumName: a.albumName || '',
+    durationMs: Number(a.durationInMillis || 0),
+    artworkTemplate: a.artwork?.url || null,
+    artworkColor: a.artwork?.bgColor || null,
+    contentRating: a.contentRating || null,
+    hasLossless: Boolean(a.audioTraits?.includes?.('lossless')),
+    hasHiRes: Boolean(a.audioTraits?.includes?.('hi-res-lossless')),
+    hasAtmos: Boolean(
+      a.audioTraits?.includes?.('atmos') || a.audioTraits?.includes?.('spatial'),
+    ),
+    downloadable: Boolean(catalogId),
+  }
+}
+
+export async function fetchLibraryPlaylist({ libraryId, mediaUserToken, language = 'en-US' }) {
+  if (!libraryId) throw new Error('libraryId required')
+  const qs = new URLSearchParams({
+    include: 'catalog',
+    extend: 'playParams',
+    l: language,
+  })
+  const url = `${ME}/library/playlists/${encodeURIComponent(libraryId)}?${qs.toString()}`
+  const json = await apiGet(url, { mediaUserToken, language })
+  return json?.data?.[0] || null
+}
+
+export async function fetchLibraryPlaylistTracksPage({
+  libraryId,
+  mediaUserToken,
+  language = 'en-US',
+  offset = 0,
+  limit = LIBRARY_PAGE_SIZE,
+}) {
+  if (!libraryId) throw new Error('libraryId required')
+  const qs = new URLSearchParams({
+    include: 'catalog',
+    'include[library-songs]': 'catalog',
+    extend: 'playParams,catalogId',
+    limit: String(Math.max(1, Math.min(limit, LIBRARY_PAGE_SIZE))),
+    offset: String(Math.max(0, offset)),
+    l: language,
+  })
+  const url = `${ME}/library/playlists/${encodeURIComponent(libraryId)}/tracks?${qs.toString()}`
+  const json = await apiGet(url, { mediaUserToken, language })
+  const data = json?.data || []
+  return {
+    items: data.map(normalizeLibraryTrack).filter(Boolean),
+    next: typeof json?.next === 'string' ? json.next : null,
+  }
+}
+
+export async function* iterateLibraryPlaylistTracks({
+  libraryId,
+  mediaUserToken,
+  language,
+  pageSize,
+}) {
+  let offset = 0
+  const limit = pageSize || LIBRARY_PAGE_SIZE
+  while (true) {
+    const page = await fetchLibraryPlaylistTracksPage({
+      libraryId,
+      mediaUserToken,
+      language,
+      offset,
+      limit,
+    })
+    for (const item of page.items) yield item
+    if (!page.next || page.items.length === 0) return
+    offset += page.items.length
+  }
+}
+
+export async function getLibraryPlaylistDetail({ libraryId, mediaUserToken, language }) {
+  const raw = await fetchLibraryPlaylist({ libraryId, mediaUserToken, language })
+  if (!raw) return null
+  const head = normalizeLibraryPlaylist(raw)
+  const tracks = []
+  for await (const track of iterateLibraryPlaylistTracks({
+    libraryId,
+    mediaUserToken,
+    language,
+  })) {
+    tracks.push(track)
+  }
+  const undownloadableCount = tracks.filter((t) => !t.downloadable).length
+  return {
+    libraryId,
+    catalogId: head?.catalogId || null,
+    name: head?.name || 'Untitled playlist',
+    curatorName: head?.curatorName || (head?.isUserCreated ? 'You' : 'Apple Music'),
+    description: head?.description || '',
+    artworkTemplate: head?.artworkTemplate || null,
+    artworkColor: head?.artworkColor || null,
+    isUserCreated: Boolean(head?.isUserCreated),
+    trackCount: tracks.length,
+    tracks,
+    hasLossless: tracks.some((t) => t.hasLossless),
+    hasHiRes: tracks.some((t) => t.hasHiRes),
+    hasAtmos: tracks.some((t) => t.hasAtmos),
+    undownloadableCount,
+    downloadable: tracks.some((t) => t.downloadable),
+  }
+}
+
 export const __test__ = {
   pickCatalogId,
   pickCatalogPlaylistId,
