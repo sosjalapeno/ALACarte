@@ -33,6 +33,7 @@ export async function scanLibrary() {
   const albumKeys = new Set()
   const songKeys = new Set()
   const albumTrackKeys = new Map()
+  const singlesSongKeys = new Set()
   const playlistIds = new Set()
 
   const playlistsDir = path.join(MUSIC_ROOT, 'Playlists')
@@ -80,7 +81,11 @@ export async function scanLibrary() {
             hasLyrics,
             addedAt,
           })
-          songKeys.add(makeSongKey(artistName, songName))
+          const songKey = makeSongKey(artistName, songName)
+          if (songKey) {
+            songKeys.add(songKey)
+            singlesSongKeys.add(songKey)
+          }
         }
         continue
       }
@@ -137,7 +142,15 @@ export async function scanLibrary() {
     ),
   )
 
-  return { albums, singles, albumKeys, songKeys, albumTrackKeys, playlistIds }
+  return {
+    albums,
+    singles,
+    albumKeys,
+    songKeys,
+    albumTrackKeys,
+    singlesSongKeys,
+    playlistIds,
+  }
 }
 
 export function songNameFromFilename(filename) {
@@ -187,13 +200,17 @@ export async function hasAlbumInLibrary(artistName, albumName, preScannedIndex =
 export async function getAlbumTrackPresence(artistName, albumName, tracks, preScannedIndex = null) {
   const index = preScannedIndex || (await getCachedIndex())
   const albumKey = makeAlbumKey(artistName, albumName)
+  const albumTrackSet = albumKey ? index.albumTrackKeys.get(albumKey) || null : null
+  const singlesSet = index.singlesSongKeys || new Set()
   const present = {}
   let count = 0
   for (const track of tracks || []) {
     const id = String(track?.id || '')
     if (!id) continue
     const songKey = makeSongKey(artistName, track?.name || '')
-    const has = Boolean(songKey && index.songKeys.has(songKey))
+    const has = Boolean(
+      songKey && ((albumTrackSet && albumTrackSet.has(songKey)) || singlesSet.has(songKey)),
+    )
     present[id] = has
     if (has) count += 1
   }
@@ -202,8 +219,8 @@ export async function getAlbumTrackPresence(artistName, albumName, tracks, preSc
     tracks: present,
     present: count,
     expected,
-    complete: expected > 0 && count === expected && index.albumKeys.has(albumKey),
-    folderExists: Boolean(albumKey && index.albumKeys.has(albumKey)),
+    complete: expected > 0 && count === expected && Boolean(albumTrackSet),
+    folderExists: Boolean(albumTrackSet),
   }
 }
 

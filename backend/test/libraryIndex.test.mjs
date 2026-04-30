@@ -79,3 +79,47 @@ test('getAlbumTrackPresence marks complete when album folder has every track', a
     assert.equal(presence.folderExists, true)
   })
 })
+
+test('getAlbumTrackPresence does not count standard tracks for a deluxe edition with no folder', async () => {
+  await withMusicRoot(async (root, mod) => {
+    const standardDir = path.join(root, 'Mad Season', 'Above')
+    await fsp.mkdir(standardDir, { recursive: true })
+    await fsp.writeFile(path.join(standardDir, '01. Wake Up.flac'), 'x')
+    await fsp.writeFile(path.join(standardDir, '02. X-Ray Mind.flac'), 'x')
+    await fsp.writeFile(path.join(standardDir, '03. River of Deceit.flac'), 'x')
+
+    const presence = await mod.getAlbumTrackPresence('Mad Season', 'Above (Deluxe Edition)', [
+      { id: 't1', name: 'Wake Up' },
+      { id: 't2', name: 'X-Ray Mind' },
+      { id: 't3', name: 'River of Deceit' },
+      { id: 't4', name: 'Bonus Demo' },
+    ])
+
+    assert.equal(presence.tracks.t1, false)
+    assert.equal(presence.tracks.t2, false)
+    assert.equal(presence.tracks.t3, false)
+    assert.equal(presence.tracks.t4, false)
+    assert.equal(presence.present, 0)
+    assert.equal(presence.complete, false)
+    assert.equal(presence.folderExists, false)
+  })
+})
+
+test('getAlbumTrackPresence still counts singles regardless of album folder', async () => {
+  await withMusicRoot(async (root, mod) => {
+    const singlesDir = path.join(root, 'Mad Season', 'Singles')
+    await fsp.mkdir(singlesDir, { recursive: true })
+    await fsp.writeFile(path.join(singlesDir, 'River of Deceit.flac'), 'x')
+
+    const presence = await mod.getAlbumTrackPresence('Mad Season', 'Above (Deluxe Edition)', [
+      { id: 't1', name: 'Wake Up' },
+      { id: 't2', name: 'River of Deceit' },
+    ])
+    assert.equal(presence.tracks.t1, false)
+    assert.equal(presence.tracks.t2, true)
+    assert.equal(presence.present, 1)
+    assert.equal(presence.expected, 2)
+    assert.equal(presence.complete, false)
+    assert.equal(presence.folderExists, false)
+  })
+})
