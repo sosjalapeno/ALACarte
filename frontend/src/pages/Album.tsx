@@ -262,12 +262,14 @@ export function AlbumPage() {
                   ? primaryArtistId 
                   : album.artists?.find(a => a.name === t.artistName)?.id
                 const trackDownloaded = Boolean(trackPresence?.tracks?.[t.id])
-                const trackJob = jobs.find(
-                  (j) =>
-                    (j.songId === t.id ||
-                      (j.albumId === album.id && j.kind === 'album')) &&
-                    (j.status === 'queued' || j.status === 'running'),
-                ) || null
+                const trackJob = trackDownloaded
+                  ? null
+                  : jobs.find(
+                      (j) =>
+                        (j.songId === t.id ||
+                          (j.albumId === album.id && j.kind === 'album')) &&
+                        (j.status === 'queued' || j.status === 'running'),
+                    ) || null
 
                 return (
                 <StaggeredItem

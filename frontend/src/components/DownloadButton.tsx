@@ -101,7 +101,7 @@ export function DownloadButton({
           : Download
 
   const iconClass =
-    state === 'queued' || state === 'running' ? 'animate-spin' : ''
+    !blocked && (state === 'queued' || state === 'running') ? 'animate-spin' : ''
 
   const title =
     blocked

@@ -7,6 +7,7 @@ import { useQueue } from '../hooks/useQueue'
 import { QueueItem } from '../components/QueueItem'
 import { Card } from '../components/Card'
 import { StaggeredList, StaggeredItem } from '../components/StaggeredList'
+import { Badge } from '../components/Badge'
 import { Button } from '../components/Button'
 import { Modal } from '../components/Modal'
 
@@ -123,9 +124,8 @@ export function HomePage() {
                 </h2>
                 {active.length > 0 && (
                   <Button
-                    variant="ghost"
                     onClick={() => setConfirmAbortAll(true)}
-                    className="min-h-9 px-3 py-1.5 text-xs text-white/65 hover:border-rose-400/35 hover:bg-rose-500/12 hover:text-rose-200"
+                    className="border-rose-400/35 bg-rose-500/[0.18] text-rose-300 hover:border-rose-400/50 hover:bg-rose-500/[0.28] hover:text-rose-200"
                   >
                     <XCircle className="h-4 w-4" />
                     Abort all
@@ -177,29 +177,26 @@ export function HomePage() {
         onClose={() => {
           if (!abortingAll) setConfirmAbortAll(false)
         }}
+        className="max-w-md p-6"
+        label="Confirm abort all"
         placement="center"
-        label="Abort all downloads"
-        className="!max-w-[26rem]"
       >
-        <div className="p-6">
-          <div className="flex items-start gap-4">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-rose-400/25 bg-rose-500/12 text-rose-200">
-              <XCircle className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-lg font-semibold">Abort active downloads?</h3>
-              <p className="mt-1 text-sm text-white/60">
-                This will cancel {active.length} queued or running download{active.length === 1 ? '' : 's'}. Completed history is kept.
-              </p>
-            </div>
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Badge variant="bad">
+              <XCircle className="h-3.5 w-3.5" />
+              Abort downloads
+            </Badge>
           </div>
-          <div className="mt-6 flex justify-end gap-2">
-            <Button
-              variant="ghost"
-              onClick={() => setConfirmAbortAll(false)}
-              disabled={abortingAll}
-            >
-              Keep downloading
+          <h3 className="text-lg font-semibold leading-tight">
+            Abort {active.length} active download{active.length === 1 ? '' : 's'}?
+          </h3>
+          <p className="text-sm text-white/60">
+            This cancels every queued and running download. Completed history is kept.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setConfirmAbortAll(false)} disabled={abortingAll}>
+              Cancel
             </Button>
             <Button
               onClick={async () => {
@@ -212,10 +209,9 @@ export function HomePage() {
                 }
               }}
               disabled={abortingAll || active.length === 0}
-              className="border-rose-400/35 bg-rose-500/14 text-rose-100 hover:border-rose-300/45 hover:bg-rose-500/22 hover:text-white"
+              className="border-rose-400/35 bg-rose-500/[0.18] text-rose-300 hover:border-rose-400/50 hover:bg-rose-500/[0.28] hover:text-rose-200"
             >
-              <XCircle className="h-4 w-4" />
-              {abortingAll ? 'Aborting…' : `Abort ${active.length}`}
+              {abortingAll ? 'Aborting…' : 'Abort all'}
             </Button>
           </div>
         </div>
