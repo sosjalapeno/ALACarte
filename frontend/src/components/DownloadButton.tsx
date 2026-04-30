@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check, Download, Loader2, AlertCircle } from 'lucide-react'
 import { motion } from 'framer-motion'
 
@@ -6,6 +6,19 @@ import type { Job } from '../api/client'
 import { cx } from '../lib/cx'
 
 export type DownloadState = 'idle' | 'queued' | 'running' | 'done' | 'failed'
+
+function isCancelledJob(job: Job | null | undefined) {
+  return Boolean(job?.cancelled || job?.error === 'Cancelled')
+}
+
+function stateFromJob(job: Job): DownloadState {
+  if (isCancelledJob(job)) return 'idle'
+  if (job.status === 'queued') return 'queued'
+  if (job.status === 'running') return 'running'
+  if (job.status === 'done') return 'done'
+  if (job.status === 'failed') return 'failed'
+  return 'idle'
+}
 
 type Props = {
   onStart: () => Promise<unknown>
@@ -25,17 +38,36 @@ export function DownloadButton({
 }: Props) {
   const [localState, setLocalState] = useState<DownloadState>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [ignoredFailedJobId, setIgnoredFailedJobId] = useState<string | null>(null)
 
   const state: DownloadState = useMemo(() => {
-    if (localState === 'failed') return 'failed'
-    if (job) {
-      if (job.status === 'queued') return 'queued'
-      if (job.status === 'running') return 'running'
-      if (job.status === 'done') return 'done'
-      if (job.status === 'failed') return 'failed'
+    if (job && !(job.status === 'failed' && job.id === ignoredFailedJobId)) {
+      return stateFromJob(job)
     }
     return localState
-  }, [blocked, job, localState])
+  }, [ignoredFailedJobId, job, localState])
+
+  useEffect(() => {
+    if (!job) return
+    if (job.id !== ignoredFailedJobId && job.status !== 'failed') {
+      setIgnoredFailedJobId(null)
+    }
+    if (job.status !== 'queued' && job.status !== 'running') {
+      setLocalState('idle')
+      if (isCancelledJob(job)) setError(null)
+    }
+  }, [ignoredFailedJobId, job?.id, job?.status, job?.cancelled, job?.error])
+
+  useEffect(() => {
+    if (!job || job.status !== 'failed' || isCancelledJob(job) || job.id === ignoredFailedJobId) return
+    setError(job.error || job.message || 'Failed')
+    const t = window.setTimeout(() => {
+      setLocalState('idle')
+      setError(null)
+      setIgnoredFailedJobId(job.id)
+    }, 3000)
+    return () => window.clearTimeout(t)
+  }, [ignoredFailedJobId, job?.id, job?.status, job?.cancelled, job?.error, job?.message])
 
   const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -52,7 +84,10 @@ export function DownloadButton({
     } catch (err: any) {
       setLocalState('failed')
       setError(err?.message || 'Failed')
-      setTimeout(() => setLocalState('idle'), 3000)
+      setTimeout(() => {
+        setLocalState('idle')
+        setError(null)
+      }, 3000)
     }
   }
 

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { X, CheckCircle2, AlertCircle, Loader2, Clock } from 'lucide-react'
+import { X, CheckCircle2, AlertCircle, Loader2, Clock, CircleSlash } from 'lucide-react'
 
 import { api, type Job } from '../api/client'
 import { stripYear, formatPercent } from '../lib/format'
@@ -12,10 +12,13 @@ type Props = {
 }
 
 export function QueueItem({ job }: Props) {
+  const cancelled = Boolean(job.cancelled || job.error === 'Cancelled')
   const StatusIcon =
     job.status === 'done'
       ? CheckCircle2
-      : job.status === 'failed'
+      : cancelled
+        ? CircleSlash
+        : job.status === 'failed'
         ? AlertCircle
         : job.status === 'running'
           ? Loader2
@@ -23,7 +26,9 @@ export function QueueItem({ job }: Props) {
   const statusColor =
     job.status === 'done'
       ? 'text-emerald-400'
-      : job.status === 'failed'
+      : cancelled
+        ? 'text-white/45'
+        : job.status === 'failed'
         ? 'text-rose-400'
         : 'text-accent'
   const spin = job.status === 'running' ? 'animate-spin' : ''
@@ -77,12 +82,12 @@ export function QueueItem({ job }: Props) {
           >
             {job.artist}
           </ResolvedMediaLink>
-          {job.status !== 'failed' && job.message ? ` · ${job.message}` : ''}
+          {job.status !== 'failed' && job.message ? ` · ${job.message}` : cancelled ? ' · Cancelled' : ''}
         </div>
         {(job.status === 'running' || job.status === 'queued') && (
           <div className="mt-2"><ProgressBar value={job.progress} label={formatPercent(job.progress)} /></div>
         )}
-        {job.status === 'failed' && (job.error || job.message) && (
+        {job.status === 'failed' && !cancelled && (job.error || job.message) && (
           <div className="mt-1 text-xs text-rose-400 truncate">{job.error || job.message}</div>
         )}
       </div>

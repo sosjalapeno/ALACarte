@@ -135,6 +135,16 @@ function updateJob(id, patch) {
   emitEvent('job.update', jobPublic(j))
 }
 
+function makeAbortError() {
+  const err = new Error('Cancelled')
+  err.name = 'AbortError'
+  return err
+}
+
+function throwIfCancelled(job) {
+  if (job?.cancelled) throw makeAbortError()
+}
+
 function jobPublic(j) {
   return {
     id: j.id,
@@ -151,6 +161,7 @@ function jobPublic(j) {
     currentTrack: j.currentTrack,
     message: j.message,
     error: j.error,
+    cancelled: Boolean(j.cancelled),
     createdAt: j.createdAt,
     updatedAt: j.updatedAt,
     finalDir: j.finalDir,
@@ -429,15 +440,33 @@ export async function cancelJob(id) {
     return { ok: true, noop: true }
   }
   const ctl = state.running.get(id)
+  const wasActive = state.active.has(id)
   if (ctl) ctl.abort()
   state.queue = state.queue.filter((qid) => qid !== id)
   updateJob(id, {
     status: 'failed',
     error: 'Cancelled',
     message: 'Cancelled',
+    cancelled: true,
   })
-  appendHistory(j).catch(() => {})
+  if (!ctl && !wasActive) appendHistory(j).catch(() => {})
   return { ok: true }
+}
+
+export async function cancelAllJobs() {
+  const ids = new Set([
+    ...state.queue,
+    ...state.active,
+    ...state.running.keys(),
+  ])
+  let cancelled = 0
+  for (const id of ids) {
+    const j = state.jobs.get(id)
+    if (!j || j.status === 'done' || j.status === 'failed') continue
+    const result = await cancelJob(id)
+    if (result.ok && !result.noop) cancelled += 1
+  }
+  return { ok: true, cancelled }
 }
 
 async function tickQueue() {
@@ -454,8 +483,11 @@ async function tickQueue() {
 }
 
 async function runJob(job) {
+  let jobStaging = null
   try {
+    throwIfCancelled(job)
     updateJob(job.id, { status: 'running', message: 'Preparing' })
+    throwIfCancelled(job)
     const mp4box = probeMp4Box()
     if (!mp4box.ok) {
       throw new Error(
@@ -473,8 +505,9 @@ async function runJob(job) {
       throw e
     }
     await ensureDir(STAGING_ROOT)
-    const jobStaging = path.join(STAGING_ROOT, job.id)
+    jobStaging = path.join(STAGING_ROOT, job.id)
     await ensureDir(jobStaging)
+    throwIfCancelled(job)
 
     const settings = await readSettings()
     const quality = normalizeQuality(job.quality, settings.quality)
@@ -488,6 +521,7 @@ async function runJob(job) {
       mediaUserToken: creds.mediaUserToken,
       stagingRoot: jobStaging,
     })
+    throwIfCancelled(job)
 
     if (
       job.kind === 'album' &&
@@ -517,6 +551,7 @@ async function runJob(job) {
         ? `${baseUrl}?i=${encodeURIComponent(job.songId)}`
         : baseUrl
 
+    throwIfCancelled(job)
     let downloadResult = await runAmdpDownload({
       job,
       jobStaging,
@@ -795,10 +830,14 @@ async function runJob(job) {
   } catch (err) {
     state.running.delete(job.id)
     if (err.name === 'AbortError') {
+      if (jobStaging) {
+        await fsp.rm(jobStaging, { recursive: true, force: true }).catch(() => {})
+      }
       updateJob(job.id, {
         status: 'failed',
         error: 'Cancelled',
         message: 'Cancelled',
+        cancelled: true,
       })
     } else {
       console.error(`[job ${job.id}] failed:`, err)
@@ -806,6 +845,7 @@ async function runJob(job) {
         status: 'failed',
         error: err.message,
         message: `Failed: ${err.message}`,
+        cancelled: false,
       })
     }
     await appendHistory(job).catch(() => {})
@@ -842,6 +882,7 @@ async function runPartialAlbumFill({
   const trackAlbumPaths = []
 
   for (let i = 0; i < missing.length; i += 1) {
+    throwIfCancelled(job)
     const track = missing[i]
     const trackStaging = path.join(jobStaging, `t${i}`)
     await ensureDir(trackStaging)
@@ -857,22 +898,16 @@ async function runPartialAlbumFill({
     })
 
     const url = `${baseUrl}?i=${encodeURIComponent(track.id)}`
-    const trackProgress = {
-      downloadTotal: 1,
-      downloadDone: 0,
-      downloadPartial: 0,
-      convertEnabled: false,
-      convertTotal: 0,
-      convertDone: 0,
-      finalizeProgress: 0,
-    }
+    progressState.downloadDone = i
+    progressState.downloadPartial = 0
+    progressState.lockDownloadTotal = true
     const sub = await runAmdpDownload({
       job,
       jobStaging: trackStaging,
       url,
       quality,
       isSong: true,
-      progressState: trackProgress,
+      progressState,
     })
     const combined = `${sub.stdout}\n${sub.stderr}`
     if (
@@ -886,21 +921,15 @@ async function runPartialAlbumFill({
         mediaUserToken: creds.mediaUserToken,
         stagingRoot: trackStaging,
       })
+      progressState.downloadDone = i
+      progressState.downloadPartial = 0
       const retry = await runAmdpDownload({
         job,
         jobStaging: trackStaging,
         url,
         quality: 'flac',
         isSong: true,
-        progressState: {
-          downloadTotal: 1,
-          downloadDone: 0,
-          downloadPartial: 0,
-          convertEnabled: false,
-          convertTotal: 0,
-          convertDone: 0,
-          finalizeProgress: 0,
-        },
+        progressState,
       })
       assertAmdpResult(retry, `${retry.stdout}\n${retry.stderr}`)
     } else {
@@ -1013,18 +1042,26 @@ function handleAmdpLine(job, line, which, progressState) {
     const total = Number(trackHeader[2])
     if (total > 0) {
       matchedTrackHeader = true
-      progressState.downloadTotal = total
+      if (!progressState.lockDownloadTotal) {
+        progressState.downloadTotal = total
+      }
       const inferredDone = Math.max(0, Math.min(total, current - 1))
-      if (inferredDone > progressState.downloadDone) {
+      if (!progressState.lockDownloadTotal && inferredDone > progressState.downloadDone) {
         progressState.downloadDone = inferredDone
       }
       progressState.downloadPartial = 0
-      if (progressState.convertEnabled && progressState.convertDone === 0) {
+      if (
+        progressState.convertEnabled &&
+        progressState.convertDone === 0 &&
+        !progressState.lockDownloadTotal
+      ) {
         progressState.convertTotal = total
       }
 
-      job.stats.total = total
-      job.stats.done = Math.max(job.stats.done || 0, inferredDone)
+      job.stats.total = progressState.lockDownloadTotal ? progressState.downloadTotal : total
+      job.stats.done = progressState.lockDownloadTotal
+        ? Math.max(job.stats.done || 0, progressState.downloadDone)
+        : Math.max(job.stats.done || 0, inferredDone)
 
       const title = String(trackHeader[3] || '').trim()
       applyProgress(job, progressState, {
@@ -1043,18 +1080,26 @@ function handleAmdpLine(job, line, which, progressState) {
       const total = Number(bracketed[2])
       if (total > 0) {
         matchedTrackHeader = true
-        progressState.downloadTotal = total
-        progressState.downloadDone = Math.max(
-          progressState.downloadDone,
-          Math.min(total, Math.max(0, done)),
-        )
+        if (!progressState.lockDownloadTotal) {
+          progressState.downloadTotal = total
+          progressState.downloadDone = Math.max(
+            progressState.downloadDone,
+            Math.min(total, Math.max(0, done)),
+          )
+        }
         progressState.downloadPartial = 0
-        if (progressState.convertEnabled && progressState.convertDone === 0) {
+        if (
+          progressState.convertEnabled &&
+          progressState.convertDone === 0 &&
+          !progressState.lockDownloadTotal
+        ) {
           progressState.convertTotal = total
         }
 
-        job.stats.total = total
-        job.stats.done = Math.max(job.stats.done || 0, Math.min(total, done))
+        job.stats.total = progressState.lockDownloadTotal ? progressState.downloadTotal : total
+        job.stats.done = progressState.lockDownloadTotal
+          ? Math.max(job.stats.done || 0, progressState.downloadDone)
+          : Math.max(job.stats.done || 0, Math.min(total, done))
 
         applyProgress(job, progressState, {
           currentTrack: extractBracketTitle(line),
@@ -1072,18 +1117,26 @@ function handleAmdpLine(job, line, which, progressState) {
       const total = Number(downloading[2])
       if (total > 0) {
         matchedTrackHeader = true
-        progressState.downloadTotal = total
+        if (!progressState.lockDownloadTotal) {
+          progressState.downloadTotal = total
+        }
         const inferredDone = Math.max(0, Math.min(total, current - 1))
-        if (inferredDone > progressState.downloadDone) {
+        if (!progressState.lockDownloadTotal && inferredDone > progressState.downloadDone) {
           progressState.downloadDone = inferredDone
           progressState.downloadPartial = 0
         }
-        if (progressState.convertEnabled && progressState.convertDone === 0) {
+        if (
+          progressState.convertEnabled &&
+          progressState.convertDone === 0 &&
+          !progressState.lockDownloadTotal
+        ) {
           progressState.convertTotal = total
         }
 
-        job.stats.total = total
-        job.stats.done = Math.max(job.stats.done || 0, inferredDone)
+        job.stats.total = progressState.lockDownloadTotal ? progressState.downloadTotal : total
+        job.stats.done = progressState.lockDownloadTotal
+          ? Math.max(job.stats.done || 0, progressState.downloadDone)
+          : Math.max(job.stats.done || 0, inferredDone)
 
         applyProgress(job, progressState, {
           currentTrack: String(downloading[3] || '').trim() || job.currentTrack,
@@ -1150,6 +1203,7 @@ function buildAmdpArgs({ isSong, quality, url }) {
 }
 
 async function runAmdpDownload({ job, jobStaging, url, quality, isSong, progressState }) {
+  throwIfCancelled(job)
   const ctl = new AbortController()
   state.running.set(job.id, ctl)
 
@@ -1233,8 +1287,11 @@ async function runAmdpDownload({ job, jobStaging, url, quality, isSong, progress
       },
     })
     try {
-      return await waitExit
+      const result = await waitExit
+      throwIfCancelled(job)
+      return result
     } catch (err) {
+      if (job.cancelled) throw makeAbortError()
       if (stallReason) {
         const e = new Error(stallReason)
         e.code = 'WRAPPER_STALL'

@@ -5,6 +5,7 @@ import {
   enqueuePlaylist,
   enqueueSong,
   cancelJob,
+  cancelAllJobs,
   getJob,
 } from '../lib/queue.mjs'
 
@@ -48,6 +49,15 @@ downloadRouter.post('/playlist', async (req, res) => {
     if (err?.statusCode === 409 || err?.code === 'ALREADY_IN_LIBRARY') {
       return res.status(409).json({ error: err.message || 'Already in library' })
     }
+    res.status(500).json({ error: err.message })
+  }
+})
+
+downloadRouter.post('/cancel-all', async (_req, res) => {
+  try {
+    const r = await cancelAllJobs()
+    res.json(r)
+  } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })

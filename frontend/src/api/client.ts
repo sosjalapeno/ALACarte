@@ -106,6 +106,7 @@ export type Job = {
   currentTrack?: string | null
   message?: string
   error?: string | null
+  cancelled?: boolean
   createdAt: number
   updatedAt: number
   finalDir?: string
@@ -591,6 +592,10 @@ export const api = {
   cancel: (id: string) =>
     http<{ ok: boolean }>(`/api/download/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+    }),
+  cancelAll: () =>
+    http<{ ok: boolean; cancelled: number }>('/api/download/cancel-all', {
+      method: 'POST',
     }),
   cloudLibraryHealth: () =>
     http<CloudLibraryHealth>('/api/cloud-library/health'),

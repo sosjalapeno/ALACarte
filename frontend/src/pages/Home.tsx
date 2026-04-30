@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { CheckCircle2, AlertCircle, Loader2, XCircle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 import { api } from '../api/client'
@@ -7,6 +7,8 @@ import { useQueue } from '../hooks/useQueue'
 import { QueueItem } from '../components/QueueItem'
 import { Card } from '../components/Card'
 import { StaggeredList, StaggeredItem } from '../components/StaggeredList'
+import { Button } from '../components/Button'
+import { Modal } from '../components/Modal'
 
 function SkeletonCard() {
   return (
@@ -36,6 +38,8 @@ export function HomePage() {
   const { active, recent, loading } = useQueue()
   const recentList = recent.slice(0, 50)
   const [quality, setQuality] = useState<string | null>(null)
+  const [confirmAbortAll, setConfirmAbortAll] = useState(false)
+  const [abortingAll, setAbortingAll] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -113,10 +117,20 @@ export function HomePage() {
             className="space-y-8"
           >
             <section>
-              <div className="mb-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <Loader2 className="h-4 w-4 text-accent" /> Active
                 </h2>
+                {active.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    onClick={() => setConfirmAbortAll(true)}
+                    className="min-h-9 px-3 py-1.5 text-xs text-white/65 hover:border-rose-400/35 hover:bg-rose-500/12 hover:text-rose-200"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    Abort all
+                  </Button>
+                )}
               </div>
               {active.length === 0 ? (
                 <Card className="p-6 text-sm text-white/55">
@@ -157,6 +171,55 @@ export function HomePage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <Modal
+        open={confirmAbortAll}
+        onClose={() => {
+          if (!abortingAll) setConfirmAbortAll(false)
+        }}
+        placement="center"
+        label="Abort all downloads"
+        className="!max-w-[26rem]"
+      >
+        <div className="p-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-rose-400/25 bg-rose-500/12 text-rose-200">
+              <XCircle className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-lg font-semibold">Abort active downloads?</h3>
+              <p className="mt-1 text-sm text-white/60">
+                This will cancel {active.length} queued or running download{active.length === 1 ? '' : 's'}. Completed history is kept.
+              </p>
+            </div>
+          </div>
+          <div className="mt-6 flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmAbortAll(false)}
+              disabled={abortingAll}
+            >
+              Keep downloading
+            </Button>
+            <Button
+              onClick={async () => {
+                setAbortingAll(true)
+                try {
+                  await api.cancelAll()
+                  setConfirmAbortAll(false)
+                } finally {
+                  setAbortingAll(false)
+                }
+              }}
+              disabled={abortingAll || active.length === 0}
+              className="border-rose-400/35 bg-rose-500/14 text-rose-100 hover:border-rose-300/45 hover:bg-rose-500/22 hover:text-white"
+            >
+              <XCircle className="h-4 w-4" />
+              {abortingAll ? 'Aborting…' : `Abort ${active.length}`}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
