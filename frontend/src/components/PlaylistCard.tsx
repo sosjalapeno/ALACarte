@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { api, artworkSrcSet, artworkUrl, type Playlist } from '../api/client'
 import { cx } from '../lib/cx'
+import { useDownloadQualityPrompt } from '../hooks/useDownloadQualityPrompt'
 import { useLibraryPresence } from '../hooks/useLibraryPresence'
 import { useQueue } from '../hooks/useQueue'
 import { useTouchMode } from '../hooks/useTouchMode'
@@ -20,6 +21,7 @@ export function PlaylistCard({ playlist, href, libraryId = null, userCreatedBadg
   const { jobs } = useQueue()
   const { ready, isPlaylistInLibrary, verifyPlaylistPresence } = useLibraryPresence()
   const touchMode = useTouchMode()
+  const { chooseDownloadQuality, qualityPrompt } = useDownloadQualityPrompt()
   const presenceLookup = libraryId ? { id: libraryId } : playlist
   const blocked = isPlaylistInLibrary(presenceLookup)
   const targetHref = href || `/playlist/${playlist.id}`
@@ -94,10 +96,12 @@ export function PlaylistCard({ playlist, href, libraryId = null, userCreatedBadg
             onStart={async () => {
               if (!ready && (await verifyPlaylistPresence(presenceLookup))) return false
               try {
+                const quality = await chooseDownloadQuality()
+                if (quality === false) return false
                 if (libraryId) {
-                  await api.enqueueLibraryPlaylist(libraryId)
+                  await api.enqueueLibraryPlaylist(libraryId, undefined, quality)
                 } else {
-                  await api.enqueuePlaylist(playlist.id)
+                  await api.enqueuePlaylist(playlist.id, undefined, quality)
                 }
                 return true
               } catch (err: any) {
@@ -116,6 +120,7 @@ export function PlaylistCard({ playlist, href, libraryId = null, userCreatedBadg
                 : 'opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 transition-opacity duration-200',
             )}
           />
+          {qualityPrompt}
         </div>
       </div>
       <div className="p-3 backdrop-blur-md bg-black/30">

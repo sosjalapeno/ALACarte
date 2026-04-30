@@ -3,16 +3,18 @@ import { Link, useParams } from 'react-router-dom'
 import { ListChecks, Radar, UserRoundCheck, UserRoundMinus, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 
-import { api, type Album, type Artist as ArtistT } from '../api/client'
+import { api, type Album, type Artist as ArtistT, type QualityPreference } from '../api/client'
 import { AlbumCard } from '../components/AlbumCard'
 import { SelectDownloadsModal } from '../components/SelectDownloadsModal'
 import { Card } from '../components/Card'
 import { Badge } from '../components/Badge'
 import { Button } from '../components/Button'
 import { Modal } from '../components/Modal'
+import { QualityPicker } from '../components/QualityPicker'
 import { StaggeredList, StaggeredItem } from '../components/StaggeredList'
 import { useLibraryPresence } from '../hooks/useLibraryPresence'
 import { useActivityFeed } from '../hooks/useActivityFeed'
+import { useAppSettings } from '../hooks/useAppSettings'
 
 export function ArtistPage() {
   const { id } = useParams<{ id: string }>()
@@ -26,8 +28,10 @@ export function ArtistPage() {
   const [queuedCount, setQueuedCount] = useState(0)
   const [followBanner, setFollowBanner] = useState<null | 'followed' | 'unfollowed'>(null)
   const [unfollowModalOpen, setUnfollowModalOpen] = useState(false)
+  const [followQuality, setFollowQuality] = useState<QualityPreference>('flac')
   const { isAlbumInLibrary } = useLibraryPresence()
   const { followingState } = useActivityFeed()
+  const appSettings = useAppSettings()
 
   useEffect(() => {
     if (!id) return
@@ -48,6 +52,10 @@ export function ArtistPage() {
     const t = setTimeout(() => setFollowBanner(null), 6000)
     return () => clearTimeout(t)
   }, [followBanner])
+
+  useEffect(() => {
+    if (followModalOpen && appSettings?.quality) setFollowQuality(appSettings.quality)
+  }, [followModalOpen, appSettings?.quality])
 
   useEffect(() => {
     if (!id) return
@@ -96,7 +104,9 @@ export function ArtistPage() {
     setError(null)
     setFollowModalOpen(false)
     try {
-      const result = await api.followArtist(id, downloadNow)
+      const quality =
+        downloadNow && appSettings?.promptForDownloadQuality ? followQuality : undefined
+      const result = await api.followArtist(id, downloadNow, quality)
       setFollowing(Boolean(result.artist))
       setQueuedCount(downloadNow ? result.queued.length : 0)
       setFollowBanner('followed')
@@ -273,6 +283,17 @@ export function ArtistPage() {
               </p>
             </div>
           </div>
+          {appSettings?.promptForDownloadQuality && (
+            <div className="mt-5">
+              <div className="mb-3">
+                <div className="text-xs uppercase tracking-wider text-white/55">Download quality</div>
+                <div className="mt-1 text-sm text-white/60">
+                  Applies if you download the current discography now.
+                </div>
+              </div>
+              <QualityPicker value={followQuality} onChange={setFollowQuality} />
+            </div>
+          )}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button onClick={() => setFollowModalOpen(false)} disabled={followSubmitting} variant="ghost">
               Cancel

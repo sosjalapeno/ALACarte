@@ -19,6 +19,7 @@ import { Input } from '../components/Input'
 import { DownloadButton } from '../components/DownloadButton'
 import { ResolvedMediaLink } from '../components/ResolvedMediaLink'
 import { StaggeredList, StaggeredItem } from '../components/StaggeredList'
+import { useDownloadQualityPrompt } from '../hooks/useDownloadQualityPrompt'
 import { useLibraryPresence } from '../hooks/useLibraryPresence'
 import { useQueue } from '../hooks/useQueue'
 import { useTouchMode } from '../hooks/useTouchMode'
@@ -305,6 +306,7 @@ function Section({ title, children, empty }: { title: string; empty?: boolean; c
 
 function SongRow({ song }: { song: Song }) {
   const { jobs } = useQueue()
+  const { chooseDownloadQuality, qualityPrompt } = useDownloadQualityPrompt()
   const {
     ready,
     isSongInLibrary,
@@ -390,7 +392,9 @@ function SongRow({ song }: { song: Song }) {
                 if (albumLookup && (await verifyAlbumPresence(albumLookup))) return false
               }
               try {
-                await api.enqueueSong(song.id, song.albumId)
+                const quality = await chooseDownloadQuality()
+                if (quality === false) return false
+                await api.enqueueSong(song.id, song.albumId, undefined, quality)
                 return true
               } catch (err: any) {
                 if (/already in library/i.test(String(err?.message || ''))) {
@@ -409,6 +413,7 @@ function SongRow({ song }: { song: Song }) {
                 : 'opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 md:pointer-events-none md:group-hover:pointer-events-auto md:focus-within:pointer-events-auto transition-opacity duration-200',
             )}
           />
+          {qualityPrompt}
         </div>
       )}
     </Card>

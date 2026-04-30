@@ -5,6 +5,7 @@ import { api, artworkSrcSet, artworkUrl, type Album } from '../api/client'
 import { stripYear } from '../lib/format'
 import { cx } from '../lib/cx'
 import { useAppSettings } from '../hooks/useAppSettings'
+import { useDownloadQualityPrompt } from '../hooks/useDownloadQualityPrompt'
 import { useLibraryPresence } from '../hooks/useLibraryPresence'
 import { useQueue } from '../hooks/useQueue'
 import { useTouchMode } from '../hooks/useTouchMode'
@@ -23,6 +24,7 @@ export function AlbumCard({ album, size = 'md', alreadyInLibrary = false }: Prop
   const { ready, isAlbumInLibrary, verifyAlbumPresence, getAlbumTrackPresence } = useLibraryPresence()
   const touchMode = useTouchMode()
   const appSettings = useAppSettings()
+  const { chooseDownloadQuality, qualityPrompt } = useDownloadQualityPrompt()
   const showRatingBadge =
     appSettings?.explicitFilter === 'both' &&
     (album.contentRating === 'explicit' || album.contentRating === 'clean')
@@ -114,7 +116,9 @@ export function AlbumCard({ album, size = 'md', alreadyInLibrary = false }: Prop
             onStart={async () => {
               if (!ready && (await verifyAlbumPresence(album))) return false
               try {
-                await api.enqueue(album.id)
+                const quality = await chooseDownloadQuality()
+                if (quality === false) return false
+                await api.enqueue(album.id, quality)
                 return true
               } catch (err: any) {
                 if (/already in library/i.test(String(err?.message || ''))) {
@@ -132,6 +136,7 @@ export function AlbumCard({ album, size = 'md', alreadyInLibrary = false }: Prop
                 : 'opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100 transition-opacity duration-200',
             )}
           />
+          {qualityPrompt}
         </div>
       </div>
       <div className="p-3 backdrop-blur-md bg-black/30">

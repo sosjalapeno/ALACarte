@@ -257,6 +257,20 @@ export function SettingsPage() {
                   </select>
                 </div>
               </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={settings.promptForDownloadQuality}
+                  onChange={(e) => update({ promptForDownloadQuality: e.target.checked })}
+                  className="mt-0.5 shrink-0 focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent),0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
+                />
+                <div>
+                  <div className="text-sm font-medium">Ask for quality before manual downloads</div>
+                  <div className="mt-1 text-sm text-white/55">
+                    Keep the default quality for automatic downloads, but choose per album, song, or playlist when starting downloads yourself.
+                  </div>
+                </div>
+              </label>
               <label
                 className={`flex items-start gap-3 ${settings.hasMediaUserToken ? 'cursor-pointer' : 'cursor-not-allowed'
                   }`}

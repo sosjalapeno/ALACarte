@@ -24,6 +24,7 @@ import {
   type CloudLibraryPlaylist,
   type CloudLibrarySong,
   type Playlist,
+  type QualityPreference,
   type Song,
 } from '../api/client'
 import { AlbumCard } from '../components/AlbumCard'
@@ -33,7 +34,10 @@ import { Button } from '../components/Button'
 import { Card } from '../components/Card'
 import { DownloadButton } from '../components/DownloadButton'
 import { Modal } from '../components/Modal'
+import { QualityPicker } from '../components/QualityPicker'
 import { StaggeredItem, StaggeredList } from '../components/StaggeredList'
+import { useAppSettings } from '../hooks/useAppSettings'
+import { useDownloadQualityPrompt } from '../hooks/useDownloadQualityPrompt'
 import { useEventStream } from '../hooks/useEventStream'
 import { useLibraryPresence } from '../hooks/useLibraryPresence'
 import { useQueue } from '../hooks/useQueue'
@@ -119,6 +123,8 @@ export function CloudLibraryPage() {
     skippedExisting: number
     unsupported: number
   } | null>(null)
+  const appSettings = useAppSettings()
+  const [bulkQuality, setBulkQuality] = useState<QualityPreference>('flac')
 
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const inFlightRef = useRef<Record<TabKey, Set<number>>>({
@@ -243,14 +249,19 @@ export function CloudLibraryPage() {
 
   const refresh = () => loadPage(activeTab, 'reset')
 
+  useEffect(() => {
+    if (confirmKind && appSettings?.quality) setBulkQuality(appSettings.quality)
+  }, [confirmKind, appSettings?.quality])
+
   const startDownloadAll = async () => {
     if (!confirmKind) return
     const kind = confirmKind
+    const quality = appSettings?.promptForDownloadQuality ? bulkQuality : undefined
     setConfirmKind(null)
     setBulkRunning(kind)
     setBulkBanner(null)
     try {
-      const res = await api.cloudLibraryDownloadAll(kind)
+      const res = await api.cloudLibraryDownloadAll(kind, quality)
       setBulkBanner({
         kind,
         queued: res.queued,
@@ -470,6 +481,17 @@ export function CloudLibraryPage() {
               </p>
             </div>
           </div>
+          {appSettings?.promptForDownloadQuality && (
+            <div className="mt-5">
+              <div className="mb-3">
+                <div className="text-xs uppercase tracking-wider text-white/55">Download quality</div>
+                <div className="mt-1 text-sm text-white/60">
+                  Applies to every item queued by this action.
+                </div>
+              </div>
+              <QualityPicker value={bulkQuality} onChange={setBulkQuality} />
+            </div>
+          )}
           <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button onClick={() => setConfirmKind(null)} variant="ghost">
               Cancel
@@ -703,6 +725,7 @@ function SongList({ items }: { items: CloudLibrarySong[] }) {
 
 function CloudSongRow({ song }: { song: CloudLibrarySong }) {
   const { jobs } = useQueue()
+  const { chooseDownloadQuality, qualityPrompt } = useDownloadQualityPrompt()
   const { isAlbumInLibrary, isSongInLibrary, verifySongPresence, verifyAlbumPresence, ready } =
     useLibraryPresence()
   const matching = useMemo(() => {
@@ -783,7 +806,9 @@ function CloudSongRow({ song }: { song: CloudLibrarySong }) {
                 if (albumLookup && (await verifyAlbumPresence(albumLookup))) return false
               }
               try {
-                await api.enqueueSong(song.catalogId!, albumCatalog || null)
+                const quality = await chooseDownloadQuality()
+                if (quality === false) return false
+                await api.enqueueSong(song.catalogId!, albumCatalog || null, undefined, quality)
                 return true
               } catch (err: any) {
                 if (/already in library/i.test(String(err?.message || ''))) return false
@@ -794,6 +819,7 @@ function CloudSongRow({ song }: { song: CloudLibrarySong }) {
           />
         </div>
       )}
+      {qualityPrompt}
     </Card>
   )
 }

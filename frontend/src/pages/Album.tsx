@@ -10,6 +10,7 @@ import {
   type Job,
 } from '../api/client'
 import { useLibraryPresence } from '../hooks/useLibraryPresence'
+import { useDownloadQualityPrompt } from '../hooks/useDownloadQualityPrompt'
 import { useQueue } from '../hooks/useQueue'
 import { useTouchMode } from '../hooks/useTouchMode'
 import { ProgressBar } from '../components/ProgressBar'
@@ -47,6 +48,7 @@ export function AlbumPage() {
   } = useLibraryPresence()
   const { jobs } = useQueue()
   const touchMode = useTouchMode()
+  const { chooseDownloadQuality, qualityPrompt } = useDownloadQualityPrompt()
 
   const trackPresence = album ? getAlbumTrackPresence(album.id) : null
   const presentCount = trackPresence?.present ?? 0
@@ -127,7 +129,9 @@ export function AlbumPage() {
     setEnqueueing(true)
     try {
       if (!ready && (await verifyAlbumPresence(album))) return
-      await api.enqueue(album.id)
+      const quality = await chooseDownloadQuality()
+      if (quality === false) return
+      await api.enqueue(album.id, quality)
     } catch (err: any) {
       if (/already in library/i.test(String(err?.message || ''))) {
         await verifyAlbumPresence(album)
@@ -314,7 +318,9 @@ export function AlbumPage() {
                       ariaLabel={`Download ${t.name}`}
                       onStart={async () => {
                         try {
-                          await api.enqueueSong(t.id, album.id)
+                          const quality = await chooseDownloadQuality()
+                          if (quality === false) return false
+                          await api.enqueueSong(t.id, album.id, undefined, quality)
                           return true
                         } catch (err: any) {
                           if (/already in library/i.test(String(err?.message || ''))) {
@@ -352,6 +358,7 @@ export function AlbumPage() {
           </div>
         </StaggeredList>
       )}
+      {qualityPrompt}
     </div>
   )
 }

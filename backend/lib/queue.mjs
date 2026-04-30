@@ -440,7 +440,7 @@ async function enqueueLibraryPlaylist({ libraryId, storefront, quality }) {
   return jobPublic(job)
 }
 
-export async function enqueueSong({ songId, albumId, storefront }) {
+export async function enqueueSong({ songId, albumId, storefront, quality }) {
   if (!songId) throw new Error('songId required')
 
   for (const j of state.jobs.values()) {
@@ -515,7 +515,7 @@ export async function enqueueSong({ songId, albumId, storefront }) {
           .replace('{f}', 'jpg')
       : null,
     storefront: storefront || settings.storefront || 'us',
-    quality: normalizeQuality(settings.quality),
+    quality: normalizeQuality(quality, settings.quality),
     createdAt: Date.now(),
     updatedAt: Date.now(),
     currentTrack: null,

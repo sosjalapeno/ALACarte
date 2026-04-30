@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { X, ListChecks, Disc3, Music2, Album as AlbumIcon } from 'lucide-react'
 
-import { api, artworkUrl, type Album } from '../api/client'
+import { api, artworkUrl, type Album, type QualityPreference } from '../api/client'
 import { stripYear } from '../lib/format'
 import { cx } from '../lib/cx'
+import { useAppSettings } from '../hooks/useAppSettings'
 import { Modal } from './Modal'
 import { Badge } from './Badge'
 import { Button } from './Button'
+import { QualityPicker } from './QualityPicker'
 
 type Kind = 'LP' | 'EP' | 'Single'
 const ALL_KINDS: Kind[] = ['LP', 'EP', 'Single']
@@ -37,7 +39,9 @@ export function SelectDownloadsModal({
   inLibraryMap = {},
   onQueued,
 }: Props) {
+  const appSettings = useAppSettings()
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [selectedQuality, setSelectedQuality] = useState<QualityPreference>('flac')
   const [kinds, setKinds] = useState<Kind[]>(ALL_KINDS)
   const [deselectActive, setDeselectActive] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -50,8 +54,9 @@ export function SelectDownloadsModal({
       setKinds(ALL_KINDS)
       setDeselectActive(false)
       setDisplayOrder(albums.map((a) => a.id))
+      setSelectedQuality(appSettings?.quality || 'flac')
     }
-  }, [open, albums, inLibraryMap])
+  }, [open, albums, inLibraryMap, appSettings?.quality])
 
   const lpIds = useMemo(
     () => albums.filter((a) => kindOf(a) === 'LP').map((a) => a.id),
@@ -130,8 +135,9 @@ export function SelectDownloadsModal({
       const ids = albums
         .filter((a) => selected.has(a.id) && !inLibraryMap[a.id])
         .map((a) => a.id)
+      const quality = appSettings?.promptForDownloadQuality ? selectedQuality : undefined
       for (const id of ids) {
-        await api.enqueue(id)
+        await api.enqueue(id, quality)
       }
       onQueued?.(ids.length)
       onClose()
@@ -143,8 +149,14 @@ export function SelectDownloadsModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} label={`Queue albums from ${artistName}`} placement="center">
-      <header className="flex items-start justify-between gap-4 p-5 border-b border-white/[0.06]">
+    <Modal
+      open={open}
+      onClose={onClose}
+      label={`Queue albums from ${artistName}`}
+      placement="center"
+      className="!max-w-[44rem] max-h-[calc(100dvh-4rem)] overflow-hidden flex flex-col"
+    >
+      <header className="shrink-0 flex items-start justify-between gap-4 p-5 border-b border-white/[0.06]">
         <div className="min-w-0">
           <div className="text-xs uppercase tracking-wider text-white/55 mb-1">Queue albums</div>
           <h2 className="text-lg md:text-xl font-semibold truncate">{artistName}</h2>
@@ -163,7 +175,7 @@ export function SelectDownloadsModal({
       </header>
 
       <div
-        className="px-5 py-3 flex flex-wrap gap-2 border-b border-white/[0.06]"
+        className="shrink-0 px-5 py-3 flex flex-wrap gap-2 border-b border-white/[0.06]"
         role="group"
         aria-label="Filter album types"
       >
@@ -174,7 +186,7 @@ export function SelectDownloadsModal({
         <FilterPill label="Deselect all" icon={X} active={deselectActive} onClick={deselectAll} count={0} />
       </div>
 
-      <div className="max-h-[50vh] overflow-auto px-2 py-2">
+      <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
         {albums.length === 0 ? (
           <div className="p-8 text-center text-white/55 text-sm">No albums to queue.</div>
         ) : (
@@ -202,7 +214,19 @@ export function SelectDownloadsModal({
         </div>
       )}
 
-      <footer className="p-4 flex items-center justify-end gap-2 border-t border-white/[0.06]">
+      {appSettings?.promptForDownloadQuality && (
+        <div className="shrink-0 border-t border-white/[0.06] px-5 py-4">
+          <div className="mb-3">
+            <div className="text-xs uppercase tracking-wider text-white/55">Download quality</div>
+            <div className="mt-1 text-sm text-white/60">
+              Applies to every selected album in this queue.
+            </div>
+          </div>
+          <QualityPicker value={selectedQuality} onChange={setSelectedQuality} />
+        </div>
+      )}
+
+      <footer className="shrink-0 p-4 flex items-center justify-end gap-2 border-t border-white/[0.06]">
         <Button onClick={onClose} disabled={submitting}>Cancel</Button>
         <Button onClick={submit} disabled={submitting || selected.size === 0}>
           <ListChecks className="h-4 w-4" />

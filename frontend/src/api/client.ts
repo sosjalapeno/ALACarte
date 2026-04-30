@@ -168,6 +168,7 @@ export type PublicSettings = {
   keepAlac: boolean
   coverSize: string
   downloadLyrics: boolean
+  promptForDownloadQuality: boolean
   lyricsFormat: 'lrc' | 'ttml'
   lyricsType: 'lyrics' | 'lyrics-with-translation'
   explicitFilter: 'explicit' | 'clean' | 'both'
@@ -524,7 +525,7 @@ export const api = {
     http<{ artist: FollowedArtist | null }>(
       `/api/following/${encodeURIComponent(id)}`,
     ),
-  followArtist: (id: string, downloadNow: boolean) =>
+  followArtist: (id: string, downloadNow: boolean, quality?: QualityPreference) =>
     http<{
       artist: FollowedArtist | null
       queued: Job[]
@@ -533,7 +534,7 @@ export const api = {
       `/api/following/${encodeURIComponent(id)}`,
       {
         method: 'POST',
-        body: JSON.stringify({ downloadNow }),
+        body: JSON.stringify({ downloadNow, quality }),
       },
     ),
   unfollowArtist: (id: string) =>
@@ -546,13 +547,15 @@ export const api = {
       '/api/following/check/run',
       { method: 'POST' },
     ),
-  downloadMissingReleases: () =>
+  downloadMissingReleases: (quality?: QualityPreference) =>
     http<{ ok: boolean; queued: number }>('/api/following/download-missing', {
       method: 'POST',
+      body: JSON.stringify({ quality }),
     }),
-  downloadArtistMissingReleases: (id: string) =>
+  downloadArtistMissingReleases: (id: string, quality?: QualityPreference) =>
     http<{ ok: boolean; queued: number }>(`/api/following/${encodeURIComponent(id)}/download-missing`, {
       method: 'POST',
+      body: JSON.stringify({ quality }),
     }),
   effectiveCheckInterval: (mode?: AutoCheckFrequency) =>
     http<EffectiveCheckInterval>(
@@ -611,10 +614,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ albumId, quality }),
     }),
-  enqueueSong: (songId: string, albumId?: string | null, storefront?: string) =>
+  enqueueSong: (songId: string, albumId?: string | null, storefront?: string, quality?: QualityPreference) =>
     http<{ job: Job }>('/api/download/song', {
       method: 'POST',
-      body: JSON.stringify({ songId, albumId: albumId || null, storefront }),
+      body: JSON.stringify({ songId, albumId: albumId || null, storefront, quality }),
     }),
   enqueuePlaylist: (playlistId: string, storefront?: string, quality?: QualityPreference) =>
     http<{ job: Job }>('/api/download/playlist', {
@@ -648,10 +651,10 @@ export const api = {
     http<CloudLibraryPage<CloudLibrarySong>>(
       `/api/cloud-library/songs?offset=${offset}&limit=${limit}`,
     ),
-  cloudLibraryDownloadAll: (kind: CloudLibraryKind) =>
+  cloudLibraryDownloadAll: (kind: CloudLibraryKind, quality?: QualityPreference) =>
     http<CloudDownloadAllResult>('/api/cloud-library/download-all', {
       method: 'POST',
-      body: JSON.stringify({ kind }),
+      body: JSON.stringify({ kind, quality }),
     }),
 }
 

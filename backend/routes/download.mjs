@@ -27,9 +27,9 @@ downloadRouter.post('/', async (req, res) => {
 
 downloadRouter.post('/song', async (req, res) => {
   try {
-    const { songId, albumId, storefront } = req.body || {}
+    const { songId, albumId, storefront, quality } = req.body || {}
     if (!songId) return res.status(400).json({ error: 'songId required' })
-    const job = await enqueueSong({ songId, albumId: albumId || null, storefront })
+    const job = await enqueueSong({ songId, albumId: albumId || null, storefront, quality })
     res.status(202).json({ job })
   } catch (err) {
     if (err?.statusCode === 409 || err?.code === 'ALREADY_IN_LIBRARY') {

@@ -9,9 +9,11 @@ import { Button } from '../components/Button'
 import { Card } from '../components/Card'
 import { StaggeredItem, StaggeredList } from '../components/StaggeredList'
 import { useActivityFeed, type FollowingArtistState } from '../hooks/useActivityFeed'
+import { useDownloadQualityPrompt } from '../hooks/useDownloadQualityPrompt'
 
 export function FollowingPage() {
   const { jobs, followingState } = useActivityFeed()
+  const { chooseDownloadQuality, qualityPrompt } = useDownloadQualityPrompt()
   const [artists, setArtists] = useState<FollowedArtist[]>([])
   const [loading, setLoading] = useState(true)
   const [checking, setChecking] = useState(false)
@@ -125,12 +127,16 @@ export function FollowingPage() {
               disabled={checking || loading || activeJobsTotal > 0}
               active={activeJobsTotal > 0}
               onClick={() => {
-                api
-                  .downloadMissingReleases()
-                  .then((res) => setQueuedCount(res.queued))
-                  .catch((err: any) =>
-                    setError(err.message || 'Failed to download missing releases'),
-                  )
+                void (async () => {
+                  const quality = await chooseDownloadQuality()
+                  if (quality === false) return
+                  api
+                    .downloadMissingReleases(quality)
+                    .then((res) => setQueuedCount(res.queued))
+                    .catch((err: any) =>
+                      setError(err.message || 'Failed to download missing releases'),
+                    )
+                })()
               }}
               className="whitespace-nowrap"
             >
@@ -189,6 +195,7 @@ export function FollowingPage() {
           </AnimatePresence>
         </StaggeredList>
       )}
+      {qualityPrompt}
     </div>
   )
 }
@@ -204,6 +211,7 @@ function ArtistFollowCard({
   liveState?: FollowingArtistState
   onUnfollow: () => void
 }) {
+  const { chooseDownloadQuality, qualityPrompt } = useDownloadQualityPrompt()
   const artistJobs = useMemo(() => {
     const map = new Map<string, Job>()
     for (const j of jobs) {
@@ -304,7 +312,9 @@ function ArtistFollowCard({
                   type="button"
                   onClick={async () => {
                     try {
-                      await api.downloadArtistMissingReleases(artist.id)
+                      const quality = await chooseDownloadQuality()
+                      if (quality === false) return
+                      await api.downloadArtistMissingReleases(artist.id, quality)
                     } catch (err) {
                       console.error(err)
                     }
@@ -314,6 +324,7 @@ function ArtistFollowCard({
                   Download missing
                 </button>
               ) : null}
+              {qualityPrompt}
               <button
                 type="button"
                 onClick={onUnfollow}

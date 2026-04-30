@@ -54,8 +54,9 @@ followingRouter.get('/check/effective-interval', async (req, res) => {
   }
 })
 
-followingRouter.post('/download-missing', async (_req, res) => {
+followingRouter.post('/download-missing', async (req, res) => {
   try {
+    const quality = req.body?.quality
     const store = await readFollowingStore()
     const libIndex = await scanLibraryOnce()
     const followedCount = Object.keys(store.artists || {}).length
@@ -81,7 +82,8 @@ followingRouter.post('/download-missing', async (_req, res) => {
             await enqueueAlbum({ 
               albumId: album.id, 
               storefront: artist.storefront,
-              expectedArtistId: artist.id 
+              expectedArtistId: artist.id,
+              quality,
             })
             queuedCount++
           } catch {
@@ -102,6 +104,7 @@ followingRouter.post('/:id/download-missing', async (req, res) => {
     const store = await readFollowingStore()
     const artist = store.artists[id]
     if (!artist) return res.status(404).json({ error: 'artist not found' })
+    const quality = req.body?.quality
 
     const libIndex = await scanLibraryOnce()
     let queuedCount = 0
@@ -120,7 +123,8 @@ followingRouter.post('/:id/download-missing', async (req, res) => {
               await enqueueAlbum({ 
                 albumId: album.id, 
                 storefront: artist.storefront,
-                expectedArtistId: artist.id 
+                expectedArtistId: artist.id,
+                quality,
               })
               queuedCount++
             } catch {
@@ -149,6 +153,7 @@ followingRouter.post('/:id', async (req, res) => {
     const id = String(req.params.id || '').trim()
     if (!id) return res.status(400).json({ error: 'id required' })
     const downloadNow = Boolean(req.body?.downloadNow)
+    const quality = req.body?.quality
     const result = await followArtist({ artistId: id, downloadNow })
     const queued = []
     const failed = []
@@ -166,6 +171,7 @@ followingRouter.post('/:id', async (req, res) => {
           const job = await enqueueAlbum({
             albumId: album.id,
             expectedArtistId: id,
+            quality,
           })
           queued.push(job)
         } catch (err) {

@@ -134,6 +134,7 @@ async function enqueueByKind(kind, item, { storefront, quality }) {
       songId: item.catalogId,
       albumId: item.catalogAlbumId || null,
       storefront,
+      quality,
     })
     return { job }
   }
@@ -151,7 +152,7 @@ cloudLibraryRouter.post('/download-all', async (req, res) => {
       return res.status(412).json({ error: 'media-user-token not configured' })
     }
     const storefront = settings.storefront
-    const quality = settings.quality
+    const quality = req.body?.quality || settings.quality
 
     let scanned = 0
     let queued = 0

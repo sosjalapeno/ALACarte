@@ -30,6 +30,7 @@ const WRITABLE_KEYS = new Set([
   'keepAlac',
   'coverSize',
   'downloadLyrics',
+  'promptForDownloadQuality',
   'explicitFilter',
   'lyricsFormat',
   'lyricsType',

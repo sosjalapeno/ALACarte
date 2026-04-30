@@ -9,6 +9,7 @@ import {
   type LibraryPlaylistDetail,
   type PlaylistDetail,
 } from '../api/client'
+import { useDownloadQualityPrompt } from '../hooks/useDownloadQualityPrompt'
 import { useQueue } from '../hooks/useQueue'
 import { Badge } from '../components/Badge'
 import { ResolvedMediaLink } from '../components/ResolvedMediaLink'
@@ -37,6 +38,7 @@ export function PlaylistPage() {
   const [error, setError] = useState<string | null>(null)
   const [enqueueing, setEnqueueing] = useState(false)
   const { jobs } = useQueue()
+  const { chooseDownloadQuality, qualityPrompt } = useDownloadQualityPrompt()
 
   const existingPlaylistJob = useMemo(
     () =>
@@ -91,10 +93,12 @@ export function PlaylistPage() {
     if (!playlist) return
     setEnqueueing(true)
     try {
+      const quality = await chooseDownloadQuality()
+      if (quality === false) return
       if (libraryId) {
-        await api.enqueueLibraryPlaylist(libraryId)
+        await api.enqueueLibraryPlaylist(libraryId, undefined, quality)
       } else if (catalogId) {
-        await api.enqueuePlaylist(catalogId)
+        await api.enqueuePlaylist(catalogId, undefined, quality)
       }
     } catch (err: any) {
       setError(err?.message || 'Enqueue failed')
@@ -271,6 +275,7 @@ export function PlaylistPage() {
           </div>
         </StaggeredList>
       )}
+      {qualityPrompt}
     </div>
   )
 }

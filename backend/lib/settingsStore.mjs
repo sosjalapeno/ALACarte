@@ -22,6 +22,7 @@ const DEFAULTS = {
   downloadLyrics: false,
   lyricsFormat: 'lrc',
   lyricsType: 'lyrics',
+  promptForDownloadQuality: false,
   explicitFilter: 'explicit',
   appleEmail: null,
   applePassword: null,
@@ -138,6 +139,7 @@ function normalizeSettings(parsed) {
     ...parsed,
     quality,
     convertToFlac: quality === 'flac',
+    promptForDownloadQuality: Boolean(parsed?.promptForDownloadQuality),
     autoDownloadCheckFrequency,
   }
 }
@@ -164,6 +166,7 @@ export async function readPublicSettings() {
     downloadLyrics: Boolean(s.downloadLyrics),
     lyricsFormat: s.lyricsFormat || 'lrc',
     lyricsType: s.lyricsType || 'lyrics',
+    promptForDownloadQuality: Boolean(s.promptForDownloadQuality),
     explicitFilter: s.explicitFilter || 'explicit',
     appleEmailMasked: s.appleEmail
       ? maskEmail(decryptSecret(s.appleEmail) || '')
