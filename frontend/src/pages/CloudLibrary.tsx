@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
+  AlertTriangle,
   Cloud,
   CloudDownload,
   Disc3,
@@ -57,6 +58,11 @@ type AllTabs = {
 }
 
 const PAGE_SIZE = 100
+const TAB_KEYS: readonly TabKey[] = ['albums', 'playlists', 'songs']
+
+function isTabKey(value: string | null): value is TabKey {
+  return value !== null && (TAB_KEYS as readonly string[]).includes(value)
+}
 
 function emptyTab<T>(): TabState<T> {
   return {
@@ -76,9 +82,25 @@ const fetchers = {
 }
 
 export function CloudLibraryPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const activeTab: TabKey = isTabKey(tabParam) ? tabParam : 'albums'
+  const setActiveTab = useCallback(
+    (tab: TabKey) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          if (tab === 'albums') next.delete('tab')
+          else next.set('tab', tab)
+          return next
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
+  )
   const [health, setHealth] = useState<CloudLibraryHealth | null>(null)
   const [healthLoading, setHealthLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<TabKey>('albums')
   const [tabs, setTabs] = useState<AllTabs>({
     albums: emptyTab<CloudLibraryAlbum>(),
     playlists: emptyTab<CloudLibraryPlaylist>(),
@@ -260,7 +282,11 @@ export function CloudLibraryPage() {
 
   const activeState = tabs[activeTab]
   const hasItems = activeState.items.length > 0
+  const neverFetched =
+    activeState.total === null && activeState.items.length === 0 && !activeState.error
+  const showSkeleton = (activeState.loading || neverFetched) && !hasItems
   const totalLabel = activeState.total !== null ? activeState.total : activeState.items.length
+  const showBetaBanner = activeTab === 'playlists' || activeTab === 'songs'
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 pt-4 md:pt-6">
@@ -364,10 +390,32 @@ export function CloudLibraryPage() {
         />
       </div>
 
+      {showBetaBanner && (
+        <div
+          className="flex items-start gap-3 rounded-app border border-amber-400/35 bg-amber-500/[0.10] px-4 py-2.5 text-sm text-amber-100/90 backdrop-blur-[10px]"
+          role="status"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden />
+          <div>
+            <b className="text-amber-200">Beta:</b> {activeTab === 'playlists' ? 'playlist' : 'song'}
+            {' '}downloads from Cloud are experimental and may not always behave as expected. Please{' '}
+            <a
+              href="https://github.com/sosjalapeno/alacarte/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-amber-200 underline underline-offset-2 transition-colors hover:text-white"
+            >
+              report any issues
+            </a>
+            {' '}you find.
+          </div>
+        </div>
+      )}
+
       {activeState.error && <Badge variant="bad">{activeState.error}</Badge>}
 
-      {activeState.loading && !hasItems ? (
-        <SkeletonGrid />
+      {showSkeleton ? (
+        activeTab === 'songs' ? <SongSkeletonList /> : <SkeletonGrid />
       ) : !hasItems ? (
         <Card className="relative overflow-hidden p-8 md:p-10">
           <div className="absolute -right-16 -top-16 h-44 w-44 rounded-full bg-[rgba(var(--accent),0.12)] blur-3xl" />
@@ -531,6 +579,39 @@ function SkeletonGrid() {
             className="h-full w-full bg-white/[0.04]"
             animate={{ opacity: [0.4, 1, 0.4] }}
             transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.05 }}
+          />
+        </Card>
+      ))}
+    </div>
+  )
+}
+
+function SongSkeletonList() {
+  return (
+    <div className="flex flex-col gap-1">
+      {Array.from({ length: 12 }).map((_, i) => (
+        <Card key={i} className="flex items-center gap-3 p-2">
+          <motion.div
+            className="h-10 w-10 shrink-0 rounded-lg bg-white/[0.04]"
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.05 }}
+          />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <motion.div
+              className="h-3.5 w-[55%] rounded-full bg-white/[0.06]"
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.05 }}
+            />
+            <motion.div
+              className="h-3 w-[35%] rounded-full bg-white/[0.04]"
+              animate={{ opacity: [0.4, 1, 0.4] }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.05 + 0.1 }}
+            />
+          </div>
+          <motion.div
+            className="h-7 w-16 shrink-0 rounded-full bg-white/[0.04]"
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut', delay: i * 0.05 + 0.05 }}
           />
         </Card>
       ))}
