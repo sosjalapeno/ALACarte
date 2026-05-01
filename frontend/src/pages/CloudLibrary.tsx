@@ -126,12 +126,17 @@ export function CloudLibraryPage() {
   const appSettings = useAppSettings()
   const [bulkQuality, setBulkQuality] = useState<QualityPreference>('flac')
 
+  const tabsRef = useRef(tabs)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const inFlightRef = useRef<Record<TabKey, Set<number>>>({
     albums: new Set(),
     playlists: new Set(),
     songs: new Set(),
   })
+
+  useEffect(() => {
+    tabsRef.current = tabs
+  }, [tabs])
 
   const checkHealth = useCallback(async () => {
     setHealthLoading(true)
@@ -149,59 +154,58 @@ export function CloudLibraryPage() {
     checkHealth()
   }, [checkHealth])
 
-  const loadPage = useCallback(
-    async (kind: TabKey, mode: 'reset' | 'append') => {
-      const fetcher = fetchers[kind] as (
-        offset?: number,
-        limit?: number,
-      ) => Promise<{ items: AnyItem[]; next: number | null; total: number | null }>
-      const offset = mode === 'reset' ? 0 : tabs[kind].next ?? 0
-      const inflight = inFlightRef.current[kind]
-      if (inflight.has(offset)) return
-      inflight.add(offset)
+  const loadPage = useCallback(async (kind: TabKey, mode: 'reset' | 'append') => {
+    const fetcher = fetchers[kind] as (
+      offset?: number,
+      limit?: number,
+    ) => Promise<{ items: AnyItem[]; next: number | null; total: number | null }>
+    const current = tabsRef.current[kind]
+    const offset = mode === 'reset' ? 0 : current.next
+    if (offset === null) return
+    const inflight = inFlightRef.current[kind]
+    if (inflight.has(offset)) return
+    inflight.add(offset)
+    setTabs((prev) => ({
+      ...prev,
+      [kind]: {
+        ...prev[kind],
+        loading: mode === 'reset',
+        loadingMore: mode === 'append',
+        error: null,
+      },
+    }))
+    try {
+      const page = await fetcher(offset, PAGE_SIZE)
+      setTabs((prev) => {
+        const updated = prev[kind]
+        const merged =
+          mode === 'reset' ? page.items : [...updated.items, ...page.items]
+        return {
+          ...prev,
+          [kind]: {
+            items: merged as never,
+            total: page.total,
+            next: page.next,
+            loading: false,
+            loadingMore: false,
+            error: null,
+          },
+        }
+      })
+    } catch (err: any) {
       setTabs((prev) => ({
         ...prev,
         [kind]: {
           ...prev[kind],
-          loading: mode === 'reset',
-          loadingMore: mode === 'append',
-          error: null,
+          loading: false,
+          loadingMore: false,
+          error: err?.message || 'Failed to load',
         },
       }))
-      try {
-        const page = await fetcher(offset, PAGE_SIZE)
-        setTabs((prev) => {
-          const current = prev[kind]
-          const merged =
-            mode === 'reset' ? page.items : [...current.items, ...page.items]
-          return {
-            ...prev,
-            [kind]: {
-              items: merged as never,
-              total: page.total,
-              next: page.next,
-              loading: false,
-              loadingMore: false,
-              error: null,
-            },
-          }
-        })
-      } catch (err: any) {
-        setTabs((prev) => ({
-          ...prev,
-          [kind]: {
-            ...prev[kind],
-            loading: false,
-            loadingMore: false,
-            error: err?.message || 'Failed to load',
-          },
-        }))
-      } finally {
-        inflight.delete(offset)
-      }
-    },
-    [tabs],
-  )
+    } finally {
+      inflight.delete(offset)
+    }
+  }, [])
 
   useEffect(() => {
     if (!health?.available) return
@@ -209,8 +213,12 @@ export function CloudLibraryPage() {
     if (tab.items.length === 0 && !tab.loading && !tab.error) {
       loadPage(activeTab, 'reset')
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, health?.available])
+  }, [
+    activeTab,
+    health?.available,
+    loadPage,
+    tabs,
+  ])
 
   useEffect(() => {
     const node = sentinelRef.current
@@ -225,8 +233,14 @@ export function CloudLibraryPage() {
     }, { rootMargin: '300px' })
     obs.observe(node)
     return () => obs.disconnect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, tabs[activeTab].next, tabs[activeTab].loading, tabs[activeTab].loadingMore])
+  }, [
+    activeTab,
+    loadPage,
+    tabs,
+    tabs[activeTab].loading,
+    tabs[activeTab].loadingMore,
+    tabs[activeTab].next,
+  ])
 
   useEventStream((type, data) => {
     if (type !== 'cloud-library.download-all.progress') return
