@@ -134,9 +134,7 @@ export function CloudLibraryPage() {
     songs: new Set(),
   })
 
-  useEffect(() => {
-    tabsRef.current = tabs
-  }, [tabs])
+  tabsRef.current = tabs
 
   const checkHealth = useCallback(async () => {
     setHealthLoading(true)
@@ -160,8 +158,8 @@ export function CloudLibraryPage() {
       limit?: number,
     ) => Promise<{ items: AnyItem[]; next: number | null; total: number | null }>
     const current = tabsRef.current[kind]
-    const offset = mode === 'reset' ? 0 : current.next
-    if (offset === null) return
+    if (mode === 'append' && current.next === null) return
+    const offset = mode === 'reset' ? 0 : (current.next ?? 0)
     const inflight = inFlightRef.current[kind]
     if (inflight.has(offset)) return
     inflight.add(offset)
