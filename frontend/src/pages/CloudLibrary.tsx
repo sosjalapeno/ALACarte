@@ -205,26 +205,28 @@ export function CloudLibraryPage() {
     } finally {
       inflight.delete(offset)
     }
-  }, [])
+  }, [fetchers])
+
+  const activeTabState = tabs[activeTab]
 
   useEffect(() => {
     if (!health?.available) return
-    const tab = tabs[activeTab]
-    if (tab.items.length === 0 && !tab.loading && !tab.error) {
+    if (activeTabState.items.length === 0 && !activeTabState.loading && !activeTabState.error) {
       loadPage(activeTab, 'reset')
     }
   }, [
     activeTab,
+    activeTabState.error,
+    activeTabState.items.length,
+    activeTabState.loading,
     health?.available,
     loadPage,
-    tabs,
   ])
 
   useEffect(() => {
     const node = sentinelRef.current
     if (!node) return
-    const tab = tabs[activeTab]
-    if (tab.next === null || tab.loading || tab.loadingMore) return
+    if (activeTabState.next === null || activeTabState.loading || activeTabState.loadingMore) return
     const obs = new IntersectionObserver((entries) => {
       const e = entries[0]
       if (e?.isIntersecting) {
@@ -235,11 +237,10 @@ export function CloudLibraryPage() {
     return () => obs.disconnect()
   }, [
     activeTab,
+    activeTabState.loading,
+    activeTabState.loadingMore,
+    activeTabState.next,
     loadPage,
-    tabs,
-    tabs[activeTab].loading,
-    tabs[activeTab].loadingMore,
-    tabs[activeTab].next,
   ])
 
   useEventStream((type, data) => {
