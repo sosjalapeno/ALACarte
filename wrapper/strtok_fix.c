@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <stdlib.h>
 #include <string.h>
 
 static char *(*real_strtok)(char *, const char *) = NULL;
@@ -14,6 +15,10 @@ static __thread int saved_active = 0;
  * again if needed (defensive; containers are single-shot in practice).
  */
 static __thread int login_patch_used = 0;
+
+__attribute__((constructor)) static void clear_ld_preload(void) {
+  unsetenv("LD_PRELOAD");
+}
 
 char *strtok(char *str, const char *delim) {
   if (real_strtok == NULL) {
