@@ -299,6 +299,11 @@ export async function purgePlaylistExportsSharingIds(
       for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
         await fsp.unlink(path.join(playlistsDir, `${stem}${ext}`)).catch(() => null)
       }
+      const companionDir = path.join(playlistsDir, stem)
+      const companionStat = await fsp.stat(companionDir).catch(() => null)
+      if (companionStat?.isDirectory()) {
+        await fsp.rm(companionDir, { recursive: true, force: true }).catch(() => null)
+      }
     }
   }
 }

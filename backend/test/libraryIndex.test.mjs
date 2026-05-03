@@ -185,6 +185,9 @@ test('purgePlaylistExportsSharingIds removes stale exports but keeps other ids',
     await fsp.mkdir(playlistsDir, { recursive: true })
     const staleLines = ['#EXTM3U', '#ALACARTE_PLAYLIST_ID:z9', '../x.flac'].join('\n')
     await fsp.writeFile(path.join(playlistsDir, 'Stale Copy.m3u8'), staleLines + '\n')
+    const staleCompanion = path.join(playlistsDir, 'Stale Copy')
+    await fsp.mkdir(staleCompanion, { recursive: true })
+    await fsp.writeFile(path.join(staleCompanion, '001 Track.flac'), 'x')
     await fsp.writeFile(
       path.join(playlistsDir, 'Other.m3u8'),
       `#EXTM3U\n#ALACARTE_PLAYLIST_ID:other\nx.flac\n`,
@@ -199,6 +202,8 @@ test('purgePlaylistExportsSharingIds removes stale exports but keeps other ids',
 
     const staleStill = await fsp.stat(path.join(playlistsDir, 'Stale Copy.m3u8')).catch(() => null)
     assert.equal(staleStill, null)
+    const staleCompanionStill = await fsp.stat(staleCompanion).catch(() => null)
+    assert.equal(staleCompanionStill, null)
     const otherStill = await fsp
       .stat(path.join(playlistsDir, 'Other.m3u8'))
       .then(() => true)
