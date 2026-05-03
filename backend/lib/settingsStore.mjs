@@ -46,6 +46,17 @@ export const AUTO_DOWNLOAD_FREQUENCY_VALUES = new Set([
   'weekly',
 ])
 
+function toBool(value, fallback = false) {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  if (typeof value === 'string') {
+    const s = value.trim().toLowerCase()
+    if (['true', '1', 'yes', 'on'].includes(s)) return true
+    if (['false', '0', 'no', 'off', ''].includes(s)) return false
+  }
+  return Boolean(fallback)
+}
+
 export async function ensureConfigDir(dir = CONFIG_DIR) {
   await fsp.mkdir(dir, { recursive: true, mode: 0o750 })
   if (!fs.existsSync(SECRET_FILE)) {
@@ -140,9 +151,19 @@ function normalizeSettings(parsed) {
     ...parsed,
     quality,
     convertToFlac: quality === 'flac',
-    promptForDownloadQuality: Boolean(parsed?.promptForDownloadQuality),
+    keepAlac: toBool(parsed?.keepAlac, DEFAULTS.keepAlac),
+    downloadLyrics: toBool(parsed?.downloadLyrics, DEFAULTS.downloadLyrics),
+    promptForDownloadQuality: toBool(
+      parsed?.promptForDownloadQuality,
+      DEFAULTS.promptForDownloadQuality,
+    ),
+    navidromeEnabled: toBool(parsed?.navidromeEnabled, DEFAULTS.navidromeEnabled),
+    autoDownloadsEnabled: toBool(parsed?.autoDownloadsEnabled, DEFAULTS.autoDownloadsEnabled),
     autoDownloadCheckFrequency,
-    stagingInsideMusicLibrary: Boolean(parsed?.stagingInsideMusicLibrary),
+    stagingInsideMusicLibrary: toBool(
+      parsed?.stagingInsideMusicLibrary,
+      DEFAULTS.stagingInsideMusicLibrary,
+    ),
   }
 }
 

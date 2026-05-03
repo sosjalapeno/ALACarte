@@ -81,3 +81,13 @@ test('writeSettings persists stagingInsideMusicLibrary', async () => {
   assert.equal(s.stagingInsideMusicLibrary, false)
   assert.equal(pub.stagingInsideMusicLibrary, false)
 })
+
+test('boolean settings coerce string inputs like "false" correctly', async () => {
+  await writeSettings({ stagingInsideMusicLibrary: 'false' })
+  let s = await readSettings()
+  assert.equal(s.stagingInsideMusicLibrary, false)
+  await writeSettings({ stagingInsideMusicLibrary: 'true' })
+  s = await readSettings()
+  assert.equal(s.stagingInsideMusicLibrary, true)
+  await writeSettings({ stagingInsideMusicLibrary: false })
+})
