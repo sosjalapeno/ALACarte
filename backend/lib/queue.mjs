@@ -578,7 +578,22 @@ export async function cancelAllJobs() {
   return { ok: true, cancelled }
 }
 
+const STAGING_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000
+let stagingSweepTimer = null
+
 export async function initQueue() {
+  await sweepStagingRoots()
+  if (!stagingSweepTimer) {
+    stagingSweepTimer = setInterval(() => {
+      sweepStagingRoots().catch((err) => {
+        console.error('staging sweep failed:', err.message)
+      })
+    }, STAGING_SWEEP_INTERVAL_MS)
+    stagingSweepTimer.unref?.()
+  }
+}
+
+async function sweepStagingRoots() {
   const settings = await readSettings().catch(() => null)
   const activeStagingRoot = resolveStagingRoot(settings)
   const inactiveStagingRoot =
