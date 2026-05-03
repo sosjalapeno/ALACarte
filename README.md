@@ -126,7 +126,7 @@ If Apple sign-in fails, check these first:
 
 **Storage** - Lossless albums are ~300–600 MB each.
 - By default, temporary staging is written to `/tmp/alacarte-staging` while jobs run.
-- You can override this with `AMDL_STAGING_PATH` in `.env`.
+- You can override this with `AMDL_STAGING_PATH` in `.env` (deployment-level env config, not a web Settings toggle).
 - Stale job staging folders older than `AMDL_STAGING_MAX_AGE_HOURS` (default `24`) are pruned on app boot.
 - If you intentionally point staging inside your music library, configure your scanner to ignore hidden directories.
 
