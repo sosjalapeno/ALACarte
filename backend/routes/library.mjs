@@ -151,6 +151,7 @@ libraryRouter.delete('/song', async (req, res) => {
       artistName: parts[0],
       songName: path.basename(parts[2], path.extname(parts[2])),
     })
+    triggerNavidromeScan().catch(console.error)
 
     return res.json({ ok: true, removedLyrics })
   } catch (err) {
@@ -229,6 +230,7 @@ libraryRouter.delete('/album', async (req, res) => {
       artistName: parts[0],
       albumName: parts[1],
     })
+    triggerNavidromeScan().catch(console.error)
     return res.json({ ok: true })
   } catch (err) {
     if (err.message === 'out of music root') {
