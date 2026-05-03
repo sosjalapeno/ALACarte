@@ -140,6 +140,8 @@ export type Job = {
 
 export type QualityPreference = 'flac' | 'alac' | 'atmos' | 'aac'
 
+export type ReleaseScope = 'albums' | 'singles_eps' | 'everything'
+
 export type HealthReport = {
   ok: boolean
   wrapper: {
@@ -208,6 +210,7 @@ export type FollowedArtist = Artist & {
   updatedAt: number
   totalReleaseCount: number
   missingReleaseCount: number
+  releaseScope: ReleaseScope
   fullyDownloaded: boolean
 }
 
@@ -536,7 +539,12 @@ export const api = {
     http<{ artist: FollowedArtist | null }>(
       `/api/following/${encodeURIComponent(id)}`,
     ),
-  followArtist: (id: string, downloadNow: boolean, quality?: QualityPreference) =>
+  followArtist: (
+    id: string,
+    downloadNow: boolean,
+    quality?: QualityPreference,
+    releaseScope?: ReleaseScope,
+  ) =>
     http<{
       artist: FollowedArtist | null
       queued: Job[]
@@ -545,7 +553,15 @@ export const api = {
       `/api/following/${encodeURIComponent(id)}`,
       {
         method: 'POST',
-        body: JSON.stringify({ downloadNow, quality }),
+        body: JSON.stringify({ downloadNow, quality, releaseScope }),
+      },
+    ),
+  updateFollowedArtist: (id: string, patch: { releaseScope?: ReleaseScope }) =>
+    http<{ artist: FollowedArtist | null }>(
+      `/api/following/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
       },
     ),
   unfollowArtist: (id: string) =>

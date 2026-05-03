@@ -6,7 +6,7 @@ import {
   listFollowedArtists,
   unfollowArtist,
   readFollowingStore,
-  updateFollowedArtist,
+  recomputeFollowedArtist,
 } from '../lib/followedArtistsStore.mjs'
 import { runAutoDownloadCheck } from '../lib/autoDownloads.mjs'
 import { enqueueAlbum } from '../lib/queue.mjs'
@@ -14,6 +14,7 @@ import { scanLibraryOnce, hasAlbumInLibrary } from '../lib/libraryIndex.mjs'
 import { loadArtistCatalogCached } from '../lib/artistCatalogCache.mjs'
 import { describeInterval, FREQUENCY_VALUES, resolveIntervalMs } from '../lib/checkInterval.mjs'
 import { readSettings } from '../lib/settingsStore.mjs'
+import { filterReleasesByScope, normalizeReleaseScope } from '../lib/releaseScope.mjs'
 
 export const followingRouter = express.Router()
 
@@ -74,8 +75,9 @@ followingRouter.post('/download-missing', async (req, res) => {
       )
       
       if (!catalog?.albums) continue
+      const albums = filterReleasesByScope(catalog.albums, artist.releaseScope)
       
-      for (const album of catalog.albums) {
+      for (const album of albums) {
         if (!album.artistName || !album.name) continue
         if (!(await hasAlbumInLibrary(album.artistName, album.name, libIndex))) {
           try {
@@ -116,7 +118,8 @@ followingRouter.post('/:id/download-missing', async (req, res) => {
       })
 
       if (catalog?.albums) {
-        for (const album of catalog.albums) {
+        const albums = filterReleasesByScope(catalog.albums, artist.releaseScope)
+        for (const album of albums) {
           if (!album.artistName || !album.name) continue
           if (!(await hasAlbumInLibrary(album.artistName, album.name, libIndex))) {
             try {
@@ -148,13 +151,28 @@ followingRouter.get('/:id', async (req, res) => {
   }
 })
 
+followingRouter.patch('/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim()
+    if (!id) return res.status(400).json({ error: 'id required' })
+    const artist = await recomputeFollowedArtist(id, {
+      releaseScope: normalizeReleaseScope(req.body?.releaseScope),
+    })
+    if (!artist) return res.status(404).json({ error: 'artist not found' })
+    res.json({ artist })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 followingRouter.post('/:id', async (req, res) => {
   try {
     const id = String(req.params.id || '').trim()
     if (!id) return res.status(400).json({ error: 'id required' })
     const downloadNow = Boolean(req.body?.downloadNow)
     const quality = req.body?.quality
-    const result = await followArtist({ artistId: id, downloadNow })
+    const releaseScope = normalizeReleaseScope(req.body?.releaseScope)
+    const result = await followArtist({ artistId: id, downloadNow, releaseScope })
     const queued = []
     const failed = []
     if (downloadNow) {

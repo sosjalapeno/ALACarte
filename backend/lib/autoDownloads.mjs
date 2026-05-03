@@ -5,6 +5,7 @@ import { makeAlbumKey, scanLibraryOnce, stripTrailingYear } from './libraryIndex
 import { enqueueAlbum } from './queue.mjs'
 import { readSettings } from './settingsStore.mjs'
 import { readFollowingStore, updateFollowedArtist } from './followedArtistsStore.mjs'
+import { filterReleasesByScope, normalizeReleaseScope } from './releaseScope.mjs'
 
 const SCHEDULER_TICK_MS = Math.max(60_000, Number(process.env.AMDL_FOLLOW_TICK_MS) || 5 * 60 * 1000)
 const MAX_PER_TICK = Math.max(1, Number(process.env.AMDL_FOLLOW_MAX_PER_TICK) || 6)
@@ -104,7 +105,8 @@ async function checkFollowedArtist(artist, settings, libIndex, followedCount) {
     },
     { followedCount },
   )
-  const albums = catalog?.albums || []
+  const scope = normalizeReleaseScope(artist.releaseScope)
+  const albums = filterReleasesByScope(catalog?.albums || [], scope)
   const known = new Set(artist.knownReleaseIds || [])
   const newAlbums = albums.filter((album) => album.id && !known.has(album.id))
   const releaseDates = albums
@@ -184,6 +186,7 @@ async function checkFollowedArtist(artist, settings, libIndex, followedCount) {
     lastCheckedAt: Date.now(),
     totalReleaseCount: albums.length,
     missingReleaseCount: missingCount,
+    releaseScope: scope,
   })
 
   emitEvent('following.check', {
