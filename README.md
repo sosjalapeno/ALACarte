@@ -127,7 +127,8 @@ If Apple sign-in fails, check these first:
 **Storage** - Lossless albums are ~300–600 MB each.
 - By default, temporary staging is written to `/tmp/alacarte-staging` while jobs run.
 - You can switch staging location in Settings → Library output.
-- Stale job staging folders older than 24 hours are pruned on app boot.
+- Stale job staging folders older than 24 hours are pruned on app boot and every 6 hours afterwards.
+- If your host's `/tmp` is tmpfs (RAM-backed), large downloads can exhaust memory. Either bind-mount a disk path to `/tmp/alacarte-staging` in your compose override, or toggle "Store temp staging inside music library" on.
 - If you intentionally point staging inside your music library, configure your scanner to ignore hidden directories.
 
 **Sharing a network with Jellyfin/Plex/etc.** By default ALACarte creates its own `alacarte-net` Docker network. If you'd rather attach to an existing network (e.g. the one your media server already uses), set `DOCKER_NETWORK=<name>` and `DOCKER_NETWORK_EXTERNAL=true` in `.env`.
