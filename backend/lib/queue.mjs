@@ -1,6 +1,5 @@
 import crypto from 'node:crypto'
 import path from 'node:path'
-import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 
@@ -32,7 +31,10 @@ import { getAlbumTrackPresence, hasSongInLibrary, invalidateLibraryCache, isPlay
 import { probeWrapperPorts } from './wrapperHealth.mjs'
 
 const MUSIC_ROOT = process.env.AMDL_MUSIC_PATH || '/music'
-const STAGING_ROOT = path.join(MUSIC_ROOT, '.amdl-tmp')
+const STAGING_ROOT = path.resolve(process.env.AMDL_STAGING_PATH || '/tmp/alacarte-staging')
+const STAGING_MAX_AGE_HOURS = Math.max(1, Number(process.env.AMDL_STAGING_MAX_AGE_HOURS) || 24)
+const STAGING_MAX_AGE_MS = STAGING_MAX_AGE_HOURS * 60 * 60 * 1000
+const JOB_DIR_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const CONFIG_DIR = process.env.AMDL_CONFIG_DIR || '/config'
 const HISTORY_FILE = path.join(CONFIG_DIR, 'history.ndjson')
 const MAX_HISTORY = 500
@@ -568,6 +570,34 @@ export async function cancelAllJobs() {
   return { ok: true, cancelled }
 }
 
+export async function initQueue() {
+  await ensureDir(STAGING_ROOT)
+  await cleanupStaleStagingDirs()
+}
+
+async function cleanupStaleStagingDirs() {
+  const entries = await fsp.readdir(STAGING_ROOT, { withFileTypes: true }).catch(() => [])
+  const queued = new Set(state.queue)
+  const now = Date.now()
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !JOB_DIR_RE.test(entry.name)) continue
+    if (state.active.has(entry.name) || state.running.has(entry.name) || queued.has(entry.name)) {
+      continue
+    }
+    const abs = path.join(STAGING_ROOT, entry.name)
+    const stat = await fsp.stat(abs).catch(() => null)
+    if (!stat?.isDirectory()) continue
+    const updatedAt = Math.max(
+      Number(stat.mtimeMs) || 0,
+      Number(stat.ctimeMs) || 0,
+      Number(stat.birthtimeMs) || 0,
+    )
+    if (updatedAt <= 0) continue
+    if (now - updatedAt < STAGING_MAX_AGE_MS) continue
+    await fsp.rm(abs, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
 async function tickQueue() {
   while (state.active.size < MAX_CONCURRENT && state.queue.length > 0) {
     const id = state.queue.shift()
@@ -944,11 +974,7 @@ async function runJob(job) {
     await appendHistory(job)
     triggerNavidromeScan().catch(console.error)
   } catch (err) {
-    state.running.delete(job.id)
     if (err.name === 'AbortError') {
-      if (jobStaging) {
-        await fsp.rm(jobStaging, { recursive: true, force: true }).catch(() => {})
-      }
       updateJob(job.id, {
         status: 'failed',
         error: 'Cancelled',
@@ -965,6 +991,11 @@ async function runJob(job) {
       })
     }
     await appendHistory(job).catch(() => {})
+  } finally {
+    if (jobStaging) {
+      await fsp.rm(jobStaging, { recursive: true, force: true }).catch(() => {})
+    }
+    state.running.delete(job.id)
   }
 }
 

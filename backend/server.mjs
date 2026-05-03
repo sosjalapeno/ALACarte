@@ -25,6 +25,7 @@ import { isPasswordSet } from './lib/authStore.mjs'
 import { generateSetupToken } from './lib/setupToken.mjs'
 import { isAuthDisabled, requireAuth } from './lib/requireAuth.mjs'
 import { startAutoDownloadScheduler } from './lib/autoDownloads.mjs'
+import { initQueue } from './lib/queue.mjs'
 
 const PORT = Number(process.env.PORT || 7373)
 const CONFIG_DIR = process.env.AMDL_CONFIG_DIR || '/config'
@@ -32,6 +33,9 @@ const MUSIC_PATH = process.env.AMDL_MUSIC_PATH || '/music'
 
 await ensureConfigDir(CONFIG_DIR)
 loadSecretsAtBoot(CONFIG_DIR)
+await initQueue().catch((err) => {
+  console.error('queue init failed:', err.message)
+})
 
 const setupToken =
   !isAuthDisabled() && !(await isPasswordSet())
