@@ -31,8 +31,9 @@ import { getAlbumTrackPresence, hasSongInLibrary, invalidateLibraryCache, isPlay
 import { probeWrapperPorts } from './wrapperHealth.mjs'
 
 const MUSIC_ROOT = process.env.AMDL_MUSIC_PATH || '/music'
-const STAGING_ROOT = path.resolve(process.env.AMDL_STAGING_PATH || '/tmp/alacarte-staging')
-const STAGING_MAX_AGE_HOURS = Math.max(1, Number(process.env.AMDL_STAGING_MAX_AGE_HOURS) || 24)
+const STAGING_ROOT_OUTSIDE = '/tmp/alacarte-staging'
+const STAGING_ROOT_INSIDE = path.join(MUSIC_ROOT, '.amdl-tmp')
+const STAGING_MAX_AGE_HOURS = 24
 const STAGING_MAX_AGE_MS = STAGING_MAX_AGE_HOURS * 60 * 60 * 1000
 const JOB_DIR_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const CONFIG_DIR = process.env.AMDL_CONFIG_DIR || '/config'
@@ -71,6 +72,13 @@ function createProgressState(job, { convertEnabled }) {
     convertDone: 0,
     finalizeProgress: 0,
   }
+}
+
+function resolveStagingRoot(settings) {
+  if (settings?.stagingInsideMusicLibrary) {
+    return STAGING_ROOT_INSIDE
+  }
+  return STAGING_ROOT_OUTSIDE
 }
 
 function clamp01(value) {
@@ -571,12 +579,19 @@ export async function cancelAllJobs() {
 }
 
 export async function initQueue() {
-  await ensureDir(STAGING_ROOT)
-  await cleanupStaleStagingDirs()
+  const settings = await readSettings().catch(() => null)
+  const activeStagingRoot = resolveStagingRoot(settings)
+  const inactiveStagingRoot =
+    activeStagingRoot === STAGING_ROOT_OUTSIDE
+      ? STAGING_ROOT_INSIDE
+      : STAGING_ROOT_OUTSIDE
+  await ensureDir(activeStagingRoot)
+  await cleanupStaleStagingDirs(activeStagingRoot)
+  await cleanupStaleStagingDirs(inactiveStagingRoot)
 }
 
-async function cleanupStaleStagingDirs() {
-  const entries = await fsp.readdir(STAGING_ROOT, { withFileTypes: true }).catch(() => [])
+async function cleanupStaleStagingDirs(stagingRoot) {
+  const entries = await fsp.readdir(stagingRoot, { withFileTypes: true }).catch(() => [])
   const queued = new Set(state.queue)
   const now = Date.now()
   for (const entry of entries) {
@@ -584,7 +599,7 @@ async function cleanupStaleStagingDirs() {
     if (state.active.has(entry.name) || state.running.has(entry.name) || queued.has(entry.name)) {
       continue
     }
-    const abs = path.join(STAGING_ROOT, entry.name)
+    const abs = path.join(stagingRoot, entry.name)
     const stat = await fsp.stat(abs).catch(() => null)
     if (!stat?.isDirectory()) continue
     const updatedAt = Math.max(
@@ -633,12 +648,13 @@ async function runJob(job) {
       emitEvent('wrapper.health', { ok: false, failedPorts: wrapperHealth.failedPorts })
       throw e
     }
-    await ensureDir(STAGING_ROOT)
-    jobStaging = path.join(STAGING_ROOT, job.id)
+    const settings = await readSettings()
+    const stagingRoot = resolveStagingRoot(settings)
+    await ensureDir(stagingRoot)
+    jobStaging = path.join(stagingRoot, job.id)
     await ensureDir(jobStaging)
     throwIfCancelled(job)
 
-    const settings = await readSettings()
     const quality = normalizeQuality(job.quality, settings.quality)
     job.quality = quality
     const progressState = createProgressState(job, {

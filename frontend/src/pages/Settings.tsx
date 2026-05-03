@@ -271,6 +271,21 @@ export function SettingsPage() {
                   </div>
                 </div>
               </label>
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={settings.stagingInsideMusicLibrary}
+                  onChange={(e) => update({ stagingInsideMusicLibrary: e.target.checked })}
+                  className="mt-0.5 shrink-0 focus-visible:ring-2 focus-visible:ring-[rgba(var(--accent),0.35)] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0a0a]"
+                />
+                <div>
+                  <div className="text-sm font-medium">Store temp staging inside music library</div>
+                  <div className="mt-1 text-sm text-white/55">
+                    Off (recommended): use <code>/tmp/alacarte-staging</code>. On: use hidden
+                    <code> /music/.amdl-tmp</code>.
+                  </div>
+                </div>
+              </label>
               <label
                 className={`flex items-start gap-3 ${settings.hasMediaUserToken ? 'cursor-pointer' : 'cursor-not-allowed'
                   }`}

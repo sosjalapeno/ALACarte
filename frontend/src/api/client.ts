@@ -184,6 +184,7 @@ export type PublicSettings = {
   hasNavidromeCreds: boolean
   autoDownloadsEnabled: boolean
   autoDownloadCheckFrequency: AutoCheckFrequency
+  stagingInsideMusicLibrary: boolean
 }
 
 export type AutoCheckFrequency =

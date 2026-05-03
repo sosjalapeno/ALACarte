@@ -60,3 +60,24 @@ test('writeSettings rejects (normalizes away) an unknown frequency value', async
   const s = await readSettings()
   assert.equal(s.autoDownloadCheckFrequency, 'auto')
 })
+
+test('stagingInsideMusicLibrary defaults to false and is public', async () => {
+  await writeSettings({ stagingInsideMusicLibrary: false })
+  const s = await readSettings()
+  const pub = await readPublicSettings()
+  assert.equal(s.stagingInsideMusicLibrary, false)
+  assert.equal(pub.stagingInsideMusicLibrary, false)
+})
+
+test('writeSettings persists stagingInsideMusicLibrary', async () => {
+  await writeSettings({ stagingInsideMusicLibrary: true })
+  let s = await readSettings()
+  let pub = await readPublicSettings()
+  assert.equal(s.stagingInsideMusicLibrary, true)
+  assert.equal(pub.stagingInsideMusicLibrary, true)
+  await writeSettings({ stagingInsideMusicLibrary: false })
+  s = await readSettings()
+  pub = await readPublicSettings()
+  assert.equal(s.stagingInsideMusicLibrary, false)
+  assert.equal(pub.stagingInsideMusicLibrary, false)
+})

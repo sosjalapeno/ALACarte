@@ -40,6 +40,7 @@ const WRITABLE_KEYS = new Set([
   'navidromePassword',
   'autoDownloadsEnabled',
   'autoDownloadCheckFrequency',
+  'stagingInsideMusicLibrary',
 ])
 
 const EXPLICIT_FILTER_VALUES = new Set(['explicit', 'clean', 'both'])

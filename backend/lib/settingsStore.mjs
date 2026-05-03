@@ -33,6 +33,7 @@ const DEFAULTS = {
   navidromePassword: null,
   autoDownloadsEnabled: true,
   autoDownloadCheckFrequency: 'auto',
+  stagingInsideMusicLibrary: false,
 }
 
 const QUALITY_VALUES = new Set(['flac', 'alac', 'atmos', 'aac'])
@@ -141,6 +142,7 @@ function normalizeSettings(parsed) {
     convertToFlac: quality === 'flac',
     promptForDownloadQuality: Boolean(parsed?.promptForDownloadQuality),
     autoDownloadCheckFrequency,
+    stagingInsideMusicLibrary: Boolean(parsed?.stagingInsideMusicLibrary),
   }
 }
 
@@ -179,6 +181,7 @@ export async function readPublicSettings() {
     hasNavidromeCreds: Boolean(s.navidromeUser && s.navidromePassword),
     autoDownloadsEnabled: Boolean(s.autoDownloadsEnabled),
     autoDownloadCheckFrequency: s.autoDownloadCheckFrequency || 'auto',
+    stagingInsideMusicLibrary: Boolean(s.stagingInsideMusicLibrary),
   }
 }
 
