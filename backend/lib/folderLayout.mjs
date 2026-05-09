@@ -3,6 +3,8 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 
 const BAD_CHARS = /[<>:"/\\|?*\x00-\x1f]/g
+const FEAT_SUFFIX_RE = /\s+[\(\[](feat\.|ft\.)[^\)\]]*[\)\]]/gi
+const SINGLE_SUFFIX_RE = /\s+[\u2013\-]\s+Single$/i
 
 export function sanitizeSegment(name) {
   if (!name) return '_'
@@ -11,6 +13,14 @@ export function sanitizeSegment(name) {
     .replace(/\.+$/g, '')
     .trim()
     .slice(0, 200) || '_'
+}
+
+export function applyNamingConvention(name, convention) {
+  if (convention !== 'qobuz') return name
+  return name
+    .replace(FEAT_SUFFIX_RE, '')
+    .replace(SINGLE_SUFFIX_RE, '')
+    .trim()
 }
 
 export async function resolveArtistDir(musicRoot, desiredArtist) {

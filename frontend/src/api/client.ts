@@ -185,6 +185,7 @@ export type PublicSettings = {
   autoDownloadsEnabled: boolean
   autoDownloadCheckFrequency: AutoCheckFrequency
   stagingInsideMusicLibrary: boolean
+  namingConvention: 'apple' | 'qobuz'
 }
 
 export type AutoCheckFrequency =

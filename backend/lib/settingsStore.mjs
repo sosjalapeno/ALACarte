@@ -34,9 +34,12 @@ const DEFAULTS = {
   autoDownloadsEnabled: true,
   autoDownloadCheckFrequency: 'auto',
   stagingInsideMusicLibrary: false,
+  namingConvention: 'apple',
 }
 
 const QUALITY_VALUES = new Set(['flac', 'alac', 'atmos', 'aac'])
+const NAMING_CONVENTION_VALUES = new Set(['apple', 'qobuz'])
+
 export const AUTO_DOWNLOAD_FREQUENCY_VALUES = new Set([
   'auto',
   '1h',
@@ -164,6 +167,9 @@ function normalizeSettings(parsed) {
       parsed?.stagingInsideMusicLibrary,
       DEFAULTS.stagingInsideMusicLibrary,
     ),
+    namingConvention: NAMING_CONVENTION_VALUES.has(parsed?.namingConvention)
+      ? parsed.namingConvention
+      : DEFAULTS.namingConvention,
   }
 }
 
@@ -203,6 +209,7 @@ export async function readPublicSettings() {
     autoDownloadsEnabled: Boolean(s.autoDownloadsEnabled),
     autoDownloadCheckFrequency: s.autoDownloadCheckFrequency || 'auto',
     stagingInsideMusicLibrary: Boolean(s.stagingInsideMusicLibrary),
+    namingConvention: s.namingConvention || 'apple',
   }
 }
 

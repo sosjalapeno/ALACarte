@@ -82,6 +82,30 @@ test('writeSettings persists stagingInsideMusicLibrary', async () => {
   assert.equal(pub.stagingInsideMusicLibrary, false)
 })
 
+test('namingConvention defaults to "apple"', async () => {
+  const s = await readSettings()
+  const pub = await readPublicSettings()
+  assert.equal(s.namingConvention, 'apple')
+  assert.equal(pub.namingConvention, 'apple')
+})
+
+test('writeSettings persists namingConvention "qobuz"', async () => {
+  await writeSettings({ namingConvention: 'qobuz' })
+  let s = await readSettings()
+  let pub = await readPublicSettings()
+  assert.equal(s.namingConvention, 'qobuz')
+  assert.equal(pub.namingConvention, 'qobuz')
+  await writeSettings({ namingConvention: 'apple' })
+  s = await readSettings()
+  assert.equal(s.namingConvention, 'apple')
+})
+
+test('writeSettings normalizes unknown namingConvention to "apple"', async () => {
+  await writeSettings({ namingConvention: 'spotify' })
+  const s = await readSettings()
+  assert.equal(s.namingConvention, 'apple')
+})
+
 test('boolean settings coerce string inputs like "false" correctly', async () => {
   await writeSettings({ stagingInsideMusicLibrary: 'false' })
   let s = await readSettings()

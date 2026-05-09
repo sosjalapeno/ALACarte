@@ -21,6 +21,7 @@ import {
   extractFolderArt,
 } from './flacConvert.mjs'
 import {
+  applyNamingConvention,
   computeFinalDir,
   ensureDir,
   mergeMove,
@@ -935,6 +936,8 @@ async function runJob(job) {
     ).length
     if (audioCount === 0) throw new Error('no audio files in final folder')
 
+    const convention = settings.namingConvention || 'apple'
+
     let finalDir
     if (isSong) {
       const artistDir = await resolveArtistDir(MUSIC_ROOT, firstArtist.name)
@@ -944,7 +947,8 @@ async function runJob(job) {
       const srcName = flacName || finalFiles.find((f) => /\.(m4a|mp3)$/i.test(f))
       if (!srcName) throw new Error('no audio file to move')
       const ext = path.extname(srcName)
-      const targetName = sanitizeSegment(job.albumTitle) + ext
+      const rawTitle = applyNamingConvention(job.albumTitle, convention)
+      const targetName = sanitizeSegment(rawTitle) + ext
       const srcPath = path.join(albumPath, srcName)
       const destPath = path.join(singlesDir, targetName)
       progressState.finalizeProgress = Math.max(progressState.finalizeProgress, 0.7)
@@ -967,12 +971,34 @@ async function runJob(job) {
       }
       finalDir = singlesDir
     } else {
+      const rawAlbumName = applyNamingConvention(
+        firstAlbum.name.replace(/\s*\(\d{4}\)\s*$/, ''),
+        convention,
+      )
       finalDir = await computeFinalDir(
         MUSIC_ROOT,
         firstArtist.name,
-        firstAlbum.name.replace(/\s*\(\d{4}\)\s*$/, ''),
+        rawAlbumName,
         job.year,
       )
+
+      if (convention === 'qobuz') {
+        const audioFiles = await fsp.readdir(albumPath)
+        for (const fn of audioFiles) {
+          if (!/\.(flac|m4a|mp3|lrc)$/i.test(fn)) continue
+          const ext = path.extname(fn)
+          const stem = path.basename(fn, ext)
+          const newStem = applyNamingConvention(stem, 'qobuz')
+          if (newStem !== stem) {
+            const src = path.join(albumPath, fn)
+            const dst = path.join(albumPath, newStem + ext)
+            if (!await fsp.stat(dst).catch(() => null)) {
+              await fsp.rename(src, dst)
+            }
+          }
+        }
+      }
+
       progressState.finalizeProgress = Math.max(progressState.finalizeProgress, 0.75)
       applyProgress(job, progressState, {
         message: 'Moving into library',

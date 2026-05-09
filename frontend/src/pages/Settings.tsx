@@ -286,6 +286,24 @@ export function SettingsPage() {
                   </div>
                 </div>
               </label>
+              <div className="flex items-start gap-3">
+                <div className="flex-1">
+                  <div className="text-sm font-medium">Naming convention</div>
+                  <div className="mt-1 text-sm text-white/55">
+                    Controls how track and album folder names are written. <em>Qobuz-compatible</em> strips
+                    featured-artist tags and trailing &ldquo;&ndash;&nbsp;Single&rdquo; suffixes to match
+                    Qobuz/Octo Fiesta naming.
+                  </div>
+                  <select
+                    value={settings.namingConvention ?? 'apple'}
+                    onChange={(e) => update({ namingConvention: e.target.value as 'apple' | 'qobuz' })}
+                    className="mt-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[rgba(var(--accent),0.35)]"
+                  >
+                    <option value="apple">Apple Music (default)</option>
+                    <option value="qobuz">Qobuz-compatible</option>
+                  </select>
+                </div>
+              </div>
               <label
                 className={`flex items-start gap-3 ${settings.hasMediaUserToken ? 'cursor-pointer' : 'cursor-not-allowed'
                   }`}
